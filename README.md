@@ -68,6 +68,15 @@ Run a single test by name:
 cargo test direction_buffer_rejects_reverse -- --exact
 ```
 
+## Install (Placeholder)
+
+Installation instructions will be added once the first playable release is
+available.
+
+## Screenshot (Placeholder)
+
+Screenshot/GIF to be added after renderer and gameplay phases are complete.
+
 ## Development Notes
 
 - Keep rendering and gameplay logic separate (`renderer` reads state only).
