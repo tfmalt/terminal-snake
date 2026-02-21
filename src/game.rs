@@ -80,22 +80,26 @@ impl GameState {
         }
 
         self.tick_count += 1;
-        self.snake.move_forward(self.bounds);
-
-        let head = self.snake.head();
-        if !head.is_within_bounds(self.bounds) {
+        let next_head = self.snake.next_head_position();
+        if !next_head.is_within_bounds(self.bounds) {
             self.status = GameStatus::GameOver;
             return;
         }
+
+        let ate_food = next_head == self.food.position;
+        if ate_food {
+            self.snake.grow_next();
+        }
+
+        self.snake.move_forward(self.bounds);
 
         if self.snake.head_overlaps_body() {
             self.status = GameStatus::GameOver;
             return;
         }
 
-        if head == self.food.position {
+        if ate_food {
             self.score += self.food.points();
-            self.snake.grow_next();
             self.update_speed_level();
 
             if self.snake.len() == usize::from(self.bounds.0) * usize::from(self.bounds.1) {
@@ -152,10 +156,8 @@ mod tests {
         state.food = Food::normal(Position { x: 2, y: 1 });
 
         state.tick();
-        assert_eq!(state.snake.len(), 1);
-
-        state.tick();
         assert_eq!(state.snake.len(), 2);
+        assert_eq!(state.status, GameStatus::Playing);
     }
 
     #[test]

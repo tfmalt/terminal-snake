@@ -81,8 +81,20 @@ impl Snake {
 
         self.direction = self.buffered_direction;
 
+        let next_head = self.next_head_position();
+
+        self.body.push_front(next_head);
+        if !self.grow {
+            let _ = self.body.pop_back();
+        }
+        self.grow = false;
+    }
+
+    /// Returns the head position for the next movement tick.
+    #[must_use]
+    pub fn next_head_position(&self) -> Position {
         let head = self.head();
-        let next_head = match self.direction {
+        match self.buffered_direction {
             Direction::Up => Position {
                 x: head.x,
                 y: head.y - 1,
@@ -99,13 +111,7 @@ impl Snake {
                 x: head.x + 1,
                 y: head.y,
             },
-        };
-
-        self.body.push_front(next_head);
-        if !self.grow {
-            let _ = self.body.pop_back();
         }
-        self.grow = false;
     }
 
     /// Buffers the next direction if it is not a direct reversal.
