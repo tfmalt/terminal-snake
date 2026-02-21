@@ -16,6 +16,7 @@ use crate::input::Direction;
 use crate::platform::Platform;
 use crate::snake::Position;
 use crate::ui::hud::{render_hud, HudInfo};
+use crate::ui::menu::{render_game_over_menu, render_pause_menu, render_start_menu};
 
 /// Renders the full game frame from immutable state.
 pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_info: HudInfo) {
@@ -40,6 +41,23 @@ pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_
 
     render_food(frame, inner, state);
     render_snake(frame, inner, state);
+
+    if is_start_screen(state) {
+        render_start_menu(frame, play_area, hud_info.high_score);
+        return;
+    }
+
+    match state.status {
+        GameStatus::Paused => render_pause_menu(frame, play_area),
+        GameStatus::GameOver => {
+            render_game_over_menu(frame, play_area, state.score, hud_info.high_score)
+        }
+        _ => {}
+    }
+}
+
+fn is_start_screen(state: &GameState) -> bool {
+    state.status == GameStatus::Paused && state.tick_count == 0 && state.score == 0
 }
 
 fn status_title(status: GameStatus, platform: Platform) -> &'static str {
