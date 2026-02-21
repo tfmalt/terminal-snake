@@ -58,6 +58,14 @@ impl Default for InputConfig {
 pub struct InputHandler {
     gilrs: Option<Gilrs>,
     last_stick_direction: Option<Direction>,
+    last_keyboard_direction: Option<Direction>,
+    active_source: Option<InputSource>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum InputSource {
+    Keyboard,
+    Controller,
 }
 
 impl InputHandler {
@@ -67,12 +75,16 @@ impl InputHandler {
         Self {
             gilrs: initialize_gilrs(config),
             last_stick_direction: None,
+            last_keyboard_direction: None,
+            active_source: None,
         }
     }
 
     /// Polls for one input event without blocking the game loop.
     pub fn poll_input(&mut self) -> io::Result<Option<GameInput>> {
-        let mut latest_terminal_input: Option<GameInput> = None;
+        let mut queued_direction: Option<GameInput> = None;
+        let mut queued_other: Option<GameInput> = None;
+
         while event::poll(Duration::from_millis(0))? {
             let terminal_event = event::read()?;
             let Some(mapped) = map_terminal_event(terminal_event) else {
@@ -83,18 +95,33 @@ impl InputHandler {
                 return Ok(Some(mapped));
             }
 
-            latest_terminal_input = Some(mapped);
+            if let GameInput::Direction(direction) = mapped {
+                if self.last_keyboard_direction == Some(direction) {
+                    continue;
+                }
+                self.last_keyboard_direction = Some(direction);
+                queued_direction.get_or_insert(GameInput::Direction(direction));
+                continue;
+            }
+
+            queued_other = Some(mapped);
         }
 
-        if latest_terminal_input.is_some() {
-            return Ok(latest_terminal_input);
+        if queued_direction.is_some() || queued_other.is_some() {
+            self.active_source = Some(InputSource::Keyboard);
+            return Ok(queued_direction.or(queued_other));
         }
 
         if let Some(gilrs) = &mut self.gilrs {
+            if self.active_source == Some(InputSource::Keyboard) {
+                return Ok(None);
+            }
+
             while let Some(controller_event) = gilrs.next_event() {
                 match controller_event.event {
                     EventType::ButtonPressed(button, _) => {
                         if let Some(mapped_input) = map_controller_button(button) {
+                            self.active_source = Some(InputSource::Controller);
                             return Ok(Some(mapped_input));
                         }
                     }
@@ -115,6 +142,7 @@ impl InputHandler {
                         }
 
                         self.last_stick_direction = Some(direction);
+                        self.active_source = Some(InputSource::Controller);
                         return Ok(Some(GameInput::Direction(direction)));
                     }
                     _ => {}

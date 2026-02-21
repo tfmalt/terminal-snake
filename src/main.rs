@@ -82,6 +82,8 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     let controller_enabled = !cli.no_controller && !platform.is_wsl();
     let mut last_tick = Instant::now();
     let mut last_status = state.status;
+    let mut last_input: Option<GameInput> = None;
+    let mut last_input_tick: Option<u64> = None;
 
     loop {
         terminal.draw(|frame| {
@@ -94,11 +96,15 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     game_over_reference_high_score,
                     controller_enabled,
                     monochrome: cli.no_color,
+                    debug_line: format_debug_line(&state, last_input, last_input_tick),
                 },
             )
         })?;
 
         if let Some(game_input) = input.poll_input()? {
+            last_input = Some(game_input);
+            last_input_tick = Some(state.tick_count);
+
             if matches!(game_input, GameInput::Quit) {
                 break;
             }
@@ -151,8 +157,8 @@ fn handle_input(state: &mut GameState, input: GameInput, app_config: AppConfig) 
 fn validate_terminal_size(bounds: (u16, u16)) -> io::Result<()> {
     let (terminal_width, terminal_height) = terminal::size()?;
 
-    let required_width = bounds.0.saturating_mul(2).saturating_add(2);
-    let required_height = bounds.1.saturating_add(3);
+    let required_width = bounds.0.saturating_add(2);
+    let required_height = bounds.1.saturating_add(4);
 
     if terminal_width < required_width || terminal_height < required_height {
         return Err(io::Error::new(
@@ -164,6 +170,27 @@ fn validate_terminal_size(bounds: (u16, u16)) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+fn format_debug_line(
+    state: &GameState,
+    last_input: Option<GameInput>,
+    last_input_tick: Option<u64>,
+) -> String {
+    let head = state.snake.head();
+    let next = state.snake.next_head_position();
+    format!(
+        "dbg tick={} status={:?} in={:?}@{:?} dir={:?} head=({}, {}) next=({}, {})",
+        state.tick_count,
+        state.status,
+        last_input,
+        last_input_tick,
+        state.snake.direction(),
+        head.x,
+        head.y,
+        next.x,
+        next.y,
+    )
 }
 
 fn is_start_screen(state: &GameState) -> bool {

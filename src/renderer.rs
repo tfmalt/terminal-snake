@@ -21,7 +21,7 @@ use crate::ui::menu::{render_game_over_menu, render_pause_menu, render_start_men
 /// Renders the full game frame from immutable state.
 pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_info: HudInfo) {
     let area = frame.area();
-    let play_area = render_hud(frame, area, state, platform, hud_info);
+    let play_area = render_hud(frame, area, state, platform, &hud_info);
 
     let block = Block::bordered()
         .title(status_title(state.status, platform))
@@ -163,7 +163,7 @@ fn logical_to_terminal(inner: Rect, bounds: (u16, u16), position: Position) -> O
         return None;
     }
 
-    let x_offset = u16::try_from(position.x).ok()?.saturating_mul(2);
+    let x_offset = u16::try_from(position.x).ok()?;
     let y_offset = u16::try_from(position.y).ok()?;
 
     let x = inner.x.saturating_add(x_offset);

@@ -8,12 +8,13 @@ use crate::game::GameState;
 use crate::platform::Platform;
 
 /// Supplemental values displayed by the top HUD row.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct HudInfo {
     pub high_score: u32,
     pub game_over_reference_high_score: u32,
     pub controller_enabled: bool,
     pub monochrome: bool,
+    pub debug_line: String,
 }
 
 impl Default for HudInfo {
@@ -23,6 +24,7 @@ impl Default for HudInfo {
             game_over_reference_high_score: 0,
             controller_enabled: true,
             monochrome: false,
+            debug_line: String::new(),
         }
     }
 }
@@ -34,10 +36,14 @@ pub fn render_hud(
     area: Rect,
     state: &GameState,
     platform: Platform,
-    info: HudInfo,
+    info: &HudInfo,
 ) -> Rect {
-    let [hud_area, play_area] =
-        Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
+    let [play_area, hud_area, debug_area] = Layout::vertical([
+        Constraint::Min(0),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .areas(area);
     let [left, center, right] = Layout::horizontal([
         Constraint::Percentage(33),
         Constraint::Percentage(34),
@@ -72,6 +78,13 @@ pub fn render_hud(
     frame.render_widget(
         Paragraph::new(Line::from(right_text)).alignment(Alignment::Right),
         right,
+    );
+
+    frame.render_widget(
+        Paragraph::new(Line::from(info.debug_line.as_str()))
+            .alignment(Alignment::Left)
+            .style(Style::default().fg(Color::DarkGray)),
+        debug_area,
     );
 
     play_area
