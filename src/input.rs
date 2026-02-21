@@ -59,13 +59,6 @@ pub struct InputHandler {
     gilrs: Option<Gilrs>,
     last_stick_direction: Option<Direction>,
     last_keyboard_direction: Option<Direction>,
-    active_source: Option<InputSource>,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum InputSource {
-    Keyboard,
-    Controller,
 }
 
 impl InputHandler {
@@ -76,11 +69,15 @@ impl InputHandler {
             gilrs: initialize_gilrs(config),
             last_stick_direction: None,
             last_keyboard_direction: None,
-            active_source: None,
         }
     }
 
     /// Polls for one input event without blocking the game loop.
+    ///
+    /// Keyboard is checked first. If a keyboard event is found it is returned
+    /// immediately and the controller is not checked for this cycle, giving
+    /// keyboard priority when both produce input simultaneously. Either source
+    /// can be used at any time without locking out the other.
     pub fn poll_input(&mut self) -> io::Result<Option<GameInput>> {
         let mut queued_direction: Option<GameInput> = None;
         let mut queued_other: Option<GameInput> = None;
@@ -108,20 +105,14 @@ impl InputHandler {
         }
 
         if queued_direction.is_some() || queued_other.is_some() {
-            self.active_source = Some(InputSource::Keyboard);
             return Ok(queued_direction.or(queued_other));
         }
 
         if let Some(gilrs) = &mut self.gilrs {
-            if self.active_source == Some(InputSource::Keyboard) {
-                return Ok(None);
-            }
-
             while let Some(controller_event) = gilrs.next_event() {
                 match controller_event.event {
                     EventType::ButtonPressed(button, _) => {
                         if let Some(mapped_input) = map_controller_button(button) {
-                            self.active_source = Some(InputSource::Controller);
                             return Ok(Some(mapped_input));
                         }
                     }
@@ -142,7 +133,6 @@ impl InputHandler {
                         }
 
                         self.last_stick_direction = Some(direction);
-                        self.active_source = Some(InputSource::Controller);
                         return Ok(Some(GameInput::Direction(direction)));
                     }
                     _ => {}
@@ -152,12 +142,6 @@ impl InputHandler {
 
         Ok(None)
     }
-}
-
-/// Returns whether a direction change is legal (no immediate 180° turns).
-#[must_use]
-pub fn direction_change_is_valid(current: Direction, next: Direction) -> bool {
-    next != current.opposite()
 }
 
 fn map_terminal_event(event: Event) -> Option<GameInput> {
@@ -208,11 +192,14 @@ fn initialize_gilrs(config: InputConfig) -> Option<Gilrs> {
     let gilrs = match Gilrs::new() {
         Ok(gilrs) => gilrs,
         Err(error) => {
+            #[cfg(debug_assertions)]
             eprintln!("Controller input disabled: {error}");
+            let _ = error;
             return None;
         }
     };
 
+    #[cfg(debug_assertions)]
     for (_, gamepad) in gilrs.gamepads() {
         eprintln!("Detected gamepad: {}", gamepad.name());
     }
@@ -262,10 +249,7 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use gilrs::{Axis, Button};
 
-    use super::{
-        direction_change_is_valid, map_controller_axis, map_controller_button, map_key_event,
-        Direction, GameInput,
-    };
+    use super::{map_controller_axis, map_controller_button, map_key_event, Direction, GameInput};
 
     #[test]
     fn opposite_direction_is_correct() {
@@ -273,23 +257,6 @@ mod tests {
         assert_eq!(Direction::Down.opposite(), Direction::Up);
         assert_eq!(Direction::Left.opposite(), Direction::Right);
         assert_eq!(Direction::Right.opposite(), Direction::Left);
-    }
-
-    #[test]
-    fn direction_buffer_rejects_reverse() {
-        assert!(!direction_change_is_valid(Direction::Up, Direction::Down));
-        assert!(!direction_change_is_valid(Direction::Down, Direction::Up));
-        assert!(!direction_change_is_valid(
-            Direction::Left,
-            Direction::Right
-        ));
-        assert!(!direction_change_is_valid(
-            Direction::Right,
-            Direction::Left
-        ));
-
-        assert!(direction_change_is_valid(Direction::Up, Direction::Left));
-        assert!(direction_change_is_valid(Direction::Up, Direction::Right));
     }
 
     #[test]

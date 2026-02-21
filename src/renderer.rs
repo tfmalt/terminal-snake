@@ -5,7 +5,7 @@ use ratatui::widgets::Block;
 use ratatui::Frame;
 
 use crate::config::{
-    GLYPH_BORDER_BOTTOM_LEFT, GLYPH_BORDER_BOTTOM_RIGHT, GLYPH_BORDER_HORIZONTAL,
+    GridSize, GLYPH_BORDER_BOTTOM_LEFT, GLYPH_BORDER_BOTTOM_RIGHT, GLYPH_BORDER_HORIZONTAL,
     GLYPH_BORDER_TOP_LEFT, GLYPH_BORDER_TOP_RIGHT, GLYPH_BORDER_VERTICAL, GLYPH_FOOD,
     GLYPH_FOOD_BONUS, GLYPH_SNAKE_BODY, GLYPH_SNAKE_HEAD_DOWN, GLYPH_SNAKE_HEAD_LEFT,
     GLYPH_SNAKE_HEAD_RIGHT, GLYPH_SNAKE_HEAD_UP, GLYPH_SNAKE_TAIL,
@@ -42,7 +42,7 @@ pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_
     render_food(frame, inner, state, hud_info.monochrome);
     render_snake(frame, inner, state, hud_info.monochrome);
 
-    if is_start_screen(state) {
+    if state.is_start_screen() {
         render_start_menu(frame, play_area, hud_info.high_score);
         return;
     }
@@ -58,10 +58,6 @@ pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_
         ),
         _ => {}
     }
-}
-
-fn is_start_screen(state: &GameState) -> bool {
-    state.status == GameStatus::Paused && state.tick_count == 0 && state.score == 0
 }
 
 fn status_title(status: GameStatus, platform: Platform) -> &'static str {
@@ -158,7 +154,7 @@ fn head_glyph(direction: Direction) -> &'static str {
     }
 }
 
-fn logical_to_terminal(inner: Rect, bounds: (u16, u16), position: Position) -> Option<(u16, u16)> {
+fn logical_to_terminal(inner: Rect, bounds: GridSize, position: Position) -> Option<(u16, u16)> {
     if !position.is_within_bounds(bounds) {
         return None;
     }

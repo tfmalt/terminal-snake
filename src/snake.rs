@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use crate::config::GridSize;
 use crate::input::Direction;
 
 /// Grid position in logical cell coordinates.
@@ -12,16 +13,19 @@ pub struct Position {
 impl Position {
     /// Returns true when the position lies inside the bounds.
     #[must_use]
-    pub fn is_within_bounds(self, bounds: (u16, u16)) -> bool {
-        self.x >= 0 && self.y >= 0 && self.x < i32::from(bounds.0) && self.y < i32::from(bounds.1)
+    pub fn is_within_bounds(self, bounds: GridSize) -> bool {
+        self.x >= 0
+            && self.y >= 0
+            && self.x < i32::from(bounds.width)
+            && self.y < i32::from(bounds.height)
     }
 
     /// Returns this position wrapped into bounds on both axes.
     #[must_use]
-    pub fn wrapped(self, bounds: (u16, u16)) -> Self {
+    pub fn wrapped(self, bounds: GridSize) -> Self {
         Self {
-            x: wrap_axis(self.x, i32::from(bounds.0)),
-            y: wrap_axis(self.y, i32::from(bounds.1)),
+            x: wrap_axis(self.x, i32::from(bounds.width)),
+            y: wrap_axis(self.y, i32::from(bounds.height)),
         }
     }
 }
@@ -76,8 +80,8 @@ impl Snake {
     }
 
     /// Applies one buffered movement step.
-    pub fn move_forward(&mut self, bounds: (u16, u16)) {
-        debug_assert!(bounds.0 > 0 && bounds.1 > 0);
+    pub fn move_forward(&mut self, bounds: GridSize) {
+        debug_assert!(bounds.width > 0 && bounds.height > 0);
 
         self.direction = self.buffered_direction;
 
@@ -177,13 +181,17 @@ impl Snake {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::GridSize;
     use crate::input::Direction;
 
     use super::{Position, Snake};
 
     #[test]
     fn position_wrapping_keeps_coordinates_inside_bounds() {
-        let bounds = (10, 8);
+        let bounds = GridSize {
+            width: 10,
+            height: 8,
+        };
 
         let wrapped_left = Position { x: -1, y: 3 }.wrapped(bounds);
         let wrapped_bottom = Position { x: 4, y: 8 }.wrapped(bounds);
@@ -196,7 +204,10 @@ mod tests {
     fn snake_moves_one_cell_per_tick() {
         let mut snake = Snake::new(Position { x: 5, y: 5 }, Direction::Right);
 
-        snake.move_forward((40, 20));
+        snake.move_forward(GridSize {
+            width: 40,
+            height: 20,
+        });
 
         assert_eq!(snake.head(), Position { x: 6, y: 5 });
         assert_eq!(snake.len(), 1);
@@ -207,7 +218,10 @@ mod tests {
         let mut snake = Snake::new(Position { x: 5, y: 5 }, Direction::Right);
 
         snake.grow_next();
-        snake.move_forward((40, 20));
+        snake.move_forward(GridSize {
+            width: 40,
+            height: 20,
+        });
 
         assert_eq!(snake.len(), 2);
     }
@@ -217,7 +231,10 @@ mod tests {
         let mut snake = Snake::new(Position { x: 5, y: 5 }, Direction::Up);
 
         snake.buffer_direction(Direction::Down);
-        snake.move_forward((40, 20));
+        snake.move_forward(GridSize {
+            width: 40,
+            height: 20,
+        });
 
         assert_eq!(snake.head(), Position { x: 5, y: 4 });
     }
@@ -230,7 +247,10 @@ mod tests {
         snake.buffer_direction(Direction::Down);
         snake.buffer_direction(Direction::Left);
 
-        snake.move_forward((40, 20));
+        snake.move_forward(GridSize {
+            width: 40,
+            height: 20,
+        });
 
         assert_eq!(snake.head(), Position { x: 6, y: 5 });
     }

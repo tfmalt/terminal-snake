@@ -14,6 +14,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use snake::config::{
     DEFAULT_GRID_HEIGHT, DEFAULT_GRID_WIDTH, DEFAULT_TICK_INTERVAL_MS, MIN_TICK_INTERVAL_MS,
+    GridSize,
 };
 use snake::game::{GameState, GameStatus};
 use snake::input::{GameInput, InputConfig, InputHandler};
@@ -43,12 +44,10 @@ struct Cli {
     /// Disable colored rendering.
     #[arg(long = "no-color")]
     no_color: bool,
-}
 
-#[derive(Debug, Clone, Copy)]
-struct AppConfig {
-    bounds: (u16, u16),
-    starting_speed: u32,
+    /// Show diagnostic debug line at the bottom of the screen.
+    #[arg(long)]
+    debug: bool,
 }
 
 fn main() -> io::Result<()> {
@@ -63,20 +62,22 @@ fn main() -> io::Result<()> {
 }
 
 fn run(cli: Cli, platform: Platform) -> io::Result<()> {
-    let app_config = AppConfig {
-        bounds: (cli.width, cli.height),
-        starting_speed: cli.speed,
-    };
-    validate_terminal_size(app_config.bounds)?;
+    let bounds = GridSize { width: cli.width, height: cli.height };
+    validate_terminal_size(bounds)?;
+
+    // Load before entering raw mode so any warning prints to a clean terminal.
+    let mut high_score = load_high_score().unwrap_or_else(|e| {
+        eprintln!("Warning: failed to load high score: {e}");
+        0
+    });
 
     let mut terminal = setup_terminal()?;
     let mut input = InputHandler::new(InputConfig {
         enable_controller: !cli.no_controller,
         is_wsl: platform.is_wsl(),
     });
-    let mut state = GameState::new_with_options(app_config.bounds, app_config.starting_speed);
+    let mut state = GameState::new_with_options(bounds, cli.speed);
     state.status = GameStatus::Paused;
-    let mut high_score = load_high_score();
     let mut game_over_reference_high_score = high_score;
 
     let controller_enabled = !cli.no_controller && !platform.is_wsl();
@@ -96,7 +97,12 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     game_over_reference_high_score,
                     controller_enabled,
                     monochrome: cli.no_color,
-                    debug_line: format_debug_line(&state, last_input, last_input_tick),
+                    debug: cli.debug,
+                    debug_line: if cli.debug {
+                        format_debug_line(&state, last_input, last_input_tick)
+                    } else {
+                        String::new()
+                    },
                 },
             )
         })?;
@@ -109,7 +115,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 break;
             }
 
-            handle_input(&mut state, game_input, app_config);
+            handle_input(&mut state, game_input);
         }
 
         let tick_interval = tick_interval_for_speed(state.speed_level);
@@ -139,26 +145,26 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     Ok(())
 }
 
-fn handle_input(state: &mut GameState, input: GameInput, app_config: AppConfig) {
+fn handle_input(state: &mut GameState, input: GameInput) {
     match input {
-        GameInput::Confirm if is_start_screen(state) => {
+        GameInput::Confirm if state.is_start_screen() => {
             state.status = GameStatus::Playing;
         }
         GameInput::Confirm
             if matches!(state.status, GameStatus::GameOver | GameStatus::Victory) =>
         {
-            *state = GameState::new_with_options(app_config.bounds, app_config.starting_speed);
+            *state = state.restart();
             state.status = GameStatus::Paused;
         }
         other => state.apply_input(other),
     }
 }
 
-fn validate_terminal_size(bounds: (u16, u16)) -> io::Result<()> {
+fn validate_terminal_size(bounds: GridSize) -> io::Result<()> {
     let (terminal_width, terminal_height) = terminal::size()?;
 
-    let required_width = bounds.0.saturating_add(2);
-    let required_height = bounds.1.saturating_add(4);
+    let required_width = bounds.width.saturating_add(2);
+    let required_height = bounds.height.saturating_add(4);
 
     if terminal_width < required_width || terminal_height < required_height {
         return Err(io::Error::new(
@@ -191,10 +197,6 @@ fn format_debug_line(
         next.x,
         next.y,
     )
-}
-
-fn is_start_screen(state: &GameState) -> bool {
-    state.status == GameStatus::Paused && state.tick_count == 0 && state.score == 0
 }
 
 fn setup_terminal() -> io::Result<Terminal<CrosstermBackend<io::Stdout>>> {

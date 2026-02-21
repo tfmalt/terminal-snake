@@ -1,5 +1,6 @@
 use rand::Rng;
 
+use crate::config::GridSize;
 use crate::snake::{Position, Snake};
 
 /// Bonus food lifetime in ticks.
@@ -40,6 +41,16 @@ impl Food {
         }
     }
 
+    /// Advances bonus food TTL by one tick. Returns `true` if the food has
+    /// expired and should be replaced. Has no effect on normal food.
+    pub fn tick_ttl(&mut self) -> bool {
+        if let FoodKind::Bonus { ref mut ttl_ticks } = self.kind {
+            *ttl_ticks = ttl_ticks.saturating_sub(1);
+            return *ttl_ticks == 0;
+        }
+        false
+    }
+
     /// Returns the score value granted when eaten.
     #[must_use]
     pub fn points(self) -> u32 {
@@ -51,30 +62,37 @@ impl Food {
 
     /// Spawns regular food in an unoccupied cell.
     #[must_use]
-    pub fn spawn<R: Rng + ?Sized>(rng: &mut R, bounds: (u16, u16), snake: &Snake) -> Self {
+    pub fn spawn<R: Rng + ?Sized>(rng: &mut R, bounds: GridSize, snake: &Snake) -> Self {
         Self::normal(spawn_position(rng, bounds, snake))
     }
 
     /// Spawns bonus food in an unoccupied cell.
     #[must_use]
-    pub fn spawn_bonus<R: Rng + ?Sized>(rng: &mut R, bounds: (u16, u16), snake: &Snake) -> Self {
+    pub fn spawn_bonus<R: Rng + ?Sized>(rng: &mut R, bounds: GridSize, snake: &Snake) -> Self {
         Self::bonus(spawn_position(rng, bounds, snake))
     }
 }
 
 /// Spawns a free position that is not currently occupied by the snake.
 #[must_use]
-pub fn spawn_position<R: Rng + ?Sized>(rng: &mut R, bounds: (u16, u16), snake: &Snake) -> Position {
+pub fn spawn_position<R: Rng + ?Sized>(rng: &mut R, bounds: GridSize, snake: &Snake) -> Position {
     let mut candidates = Vec::new();
 
-    for y in 0..i32::from(bounds.1) {
-        for x in 0..i32::from(bounds.0) {
+    for y in 0..i32::from(bounds.height) {
+        for x in 0..i32::from(bounds.width) {
             let position = Position { x, y };
             if !snake.occupies(position) {
                 candidates.push(position);
             }
         }
     }
+
+    assert!(
+        !candidates.is_empty(),
+        "spawn_position: no free cells on the board ({}×{})",
+        bounds.width,
+        bounds.height,
+    );
 
     let index = rng.gen_range(0..candidates.len());
     candidates[index]
@@ -85,6 +103,7 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
+    use crate::config::GridSize;
     use crate::input::Direction;
 
     use super::{spawn_position, Food, FoodKind, BONUS_FOOD_LIFETIME_TICKS};
@@ -103,8 +122,36 @@ mod tests {
         );
 
         for _ in 0..100 {
-            let food_position = spawn_position(&mut rng, (8, 6), &snake);
+            let food_position = spawn_position(
+                &mut rng,
+                GridSize {
+                    width: 8,
+                    height: 6,
+                },
+                &snake,
+            );
             assert!(!snake.occupies(food_position));
+        }
+    }
+
+    #[test]
+    fn bonus_food_ttl_decrements_and_expires() {
+        let mut food = Food::bonus(Position { x: 1, y: 1 });
+
+        // Should not expire before TTL runs down.
+        for _ in 0..BONUS_FOOD_LIFETIME_TICKS - 1 {
+            assert!(!food.tick_ttl());
+        }
+
+        // Final tick should signal expiry.
+        assert!(food.tick_ttl());
+    }
+
+    #[test]
+    fn normal_food_ttl_never_expires() {
+        let mut food = Food::normal(Position { x: 1, y: 1 });
+        for _ in 0..200 {
+            assert!(!food.tick_ttl());
         }
     }
 

@@ -21,9 +21,12 @@ pub fn scores_path() -> PathBuf {
     base
 }
 
-/// Loads high score from disk, returning zero on missing or malformed data.
-#[must_use]
-pub fn load_high_score() -> u32 {
+/// Loads high score from disk.
+///
+/// Returns `Ok(0)` when the score file does not yet exist (first run).
+/// Returns `Err` when the file exists but cannot be read or parsed, so the
+/// caller can surface a warning before entering raw terminal mode.
+pub fn load_high_score() -> io::Result<u32> {
     load_high_score_from_path(&scores_path())
 }
 
@@ -32,15 +35,16 @@ pub fn save_high_score(score: u32) -> io::Result<()> {
     save_high_score_to_path(&scores_path(), score)
 }
 
-fn load_high_score_from_path(path: &Path) -> u32 {
-    let Ok(raw) = fs::read_to_string(path) else {
-        return 0;
+fn load_high_score_from_path(path: &Path) -> io::Result<u32> {
+    let raw = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(e),
     };
 
-    match serde_json::from_str::<ScoreFile>(&raw) {
-        Ok(file) => file.high_score,
-        Err(_) => 0,
-    }
+    serde_json::from_str::<ScoreFile>(&raw)
+        .map(|file| file.high_score)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 fn save_high_score_to_path(path: &Path, score: u32) -> io::Result<()> {
@@ -68,22 +72,32 @@ mod tests {
         let path = unique_test_path("round_trip");
 
         save_high_score_to_path(&path, 42).expect("score save should succeed");
-        let loaded = load_high_score_from_path(&path);
+        let loaded = load_high_score_from_path(&path).expect("load should succeed");
 
         assert_eq!(loaded, 42);
         cleanup_test_path(&path);
     }
 
     #[test]
-    fn malformed_score_file_returns_zero() {
+    fn missing_score_file_returns_zero() {
+        let path = unique_test_path("missing");
+        // Deliberately do not create the file.
+        let loaded = load_high_score_from_path(&path).expect("missing file should return Ok(0)");
+        assert_eq!(loaded, 0);
+    }
+
+    #[test]
+    fn malformed_score_file_returns_error() {
         let path = unique_test_path("malformed");
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("test parent directory should be creatable");
         }
         fs::write(&path, "not-json").expect("test file write should succeed");
 
-        let loaded = load_high_score_from_path(&path);
-        assert_eq!(loaded, 0);
+        assert!(
+            load_high_score_from_path(&path).is_err(),
+            "malformed file should return Err"
+        );
 
         cleanup_test_path(&path);
     }
