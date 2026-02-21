@@ -15,6 +15,13 @@ pub enum GameStatus {
     Victory,
 }
 
+/// Why the most recent game-over state was reached.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum DeathReason {
+    WallCollision,
+    SelfCollision,
+}
+
 /// Complete mutable game state for one session.
 #[derive(Debug, Clone)]
 pub struct GameState {
@@ -24,6 +31,7 @@ pub struct GameState {
     pub speed_level: u32,
     pub tick_count: u64,
     pub status: GameStatus,
+    pub death_reason: Option<DeathReason>,
     bounds: (u16, u16),
     base_speed_level: u32,
     rng: StdRng,
@@ -67,6 +75,7 @@ impl GameState {
             speed_level: base_speed_level,
             tick_count: 0,
             status: GameStatus::Playing,
+            death_reason: None,
             bounds,
             base_speed_level,
             rng,
@@ -83,6 +92,7 @@ impl GameState {
         let next_head = self.snake.next_head_position();
         if !next_head.is_within_bounds(self.bounds) {
             self.status = GameStatus::GameOver;
+            self.death_reason = Some(DeathReason::WallCollision);
             return;
         }
 
@@ -95,6 +105,7 @@ impl GameState {
 
         if self.snake.head_overlaps_body() {
             self.status = GameStatus::GameOver;
+            self.death_reason = Some(DeathReason::SelfCollision);
             return;
         }
 
@@ -104,6 +115,7 @@ impl GameState {
 
             if self.snake.len() == usize::from(self.bounds.0) * usize::from(self.bounds.1) {
                 self.status = GameStatus::Victory;
+                self.death_reason = None;
                 return;
             }
 

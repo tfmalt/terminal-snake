@@ -4,6 +4,8 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Clear, Paragraph};
 use ratatui::Frame;
 
+use crate::game::DeathReason;
+
 /// Draws the start screen as a centered popup.
 pub fn render_start_menu(frame: &mut Frame<'_>, area: Rect, high_score: u32) {
     let popup = centered_popup(area, 70, 45);
@@ -68,7 +70,13 @@ pub fn render_pause_menu(frame: &mut Frame<'_>, area: Rect) {
 }
 
 /// Draws the game-over screen as a centered popup.
-pub fn render_game_over_menu(frame: &mut Frame<'_>, area: Rect, score: u32, high_score: u32) {
+pub fn render_game_over_menu(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    score: u32,
+    high_score: u32,
+    death_reason: Option<DeathReason>,
+) {
     let popup = centered_popup(area, 70, 40);
     frame.render_widget(Clear, popup);
 
@@ -81,6 +89,11 @@ pub fn render_game_over_menu(frame: &mut Frame<'_>, area: Rect, score: u32, high
             "High score: {}",
             if is_new_high { score } else { high_score }
         )),
+        Line::from(match death_reason {
+            Some(DeathReason::WallCollision) => "Cause: hit wall",
+            Some(DeathReason::SelfCollision) => "Cause: hit yourself",
+            None => "",
+        }),
         Line::from(if is_new_high { "New high score!" } else { "" }),
         Line::from(""),
         Line::from("[Enter]/[Space]/[A] Play Again"),

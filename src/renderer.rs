@@ -54,6 +54,7 @@ pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_
             play_area,
             state.score,
             hud_info.game_over_reference_high_score,
+            state.death_reason,
         ),
         _ => {}
     }

@@ -116,9 +116,17 @@ impl Snake {
 
     /// Buffers the next direction if it is not a direct reversal.
     pub fn buffer_direction(&mut self, direction: Direction) {
-        if direction != self.direction.opposite() {
-            self.buffered_direction = direction;
+        // Allow at most one queued turn per tick. This prevents rapid key-repeat
+        // events from overwriting an already queued direction before movement.
+        if self.buffered_direction != self.direction {
+            return;
         }
+
+        if direction == self.direction.opposite() {
+            return;
+        }
+
+        self.buffered_direction = direction;
     }
 
     /// Returns the current head position.
@@ -212,5 +220,18 @@ mod tests {
         snake.move_forward((40, 20));
 
         assert_eq!(snake.head(), Position { x: 5, y: 4 });
+    }
+
+    #[test]
+    fn direction_buffer_consumes_at_most_one_turn_per_tick() {
+        let mut snake = Snake::new(Position { x: 5, y: 5 }, Direction::Down);
+
+        snake.buffer_direction(Direction::Right);
+        snake.buffer_direction(Direction::Down);
+        snake.buffer_direction(Direction::Left);
+
+        snake.move_forward((40, 20));
+
+        assert_eq!(snake.head(), Position { x: 6, y: 5 });
     }
 }
