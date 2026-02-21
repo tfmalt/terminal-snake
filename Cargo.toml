@@ -1,0 +1,16 @@
+[package]
+name = "snake"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"
+dirs = "5"
+gilrs = "0.11"
+rand = "0.8"
+ratatui = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+unicode-width = "0.1"

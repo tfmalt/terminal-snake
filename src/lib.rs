@@ -1,0 +1,9 @@
+pub mod config;
+pub mod food;
+pub mod game;
+pub mod input;
+pub mod platform;
+pub mod renderer;
+pub mod score;
+pub mod snake;
+pub mod ui;
