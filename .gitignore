@@ -1,1 +1,48 @@
+# --- Rust / Cargo ---
+/target/
+
+# Keep Cargo.lock for binary applications.
+# Uncomment for libraries if you intentionally do not want to commit it.
+# /Cargo.lock
+
+# --- Build artifacts / profiling ---
+*.profraw
+*.profdata
+*.gcda
+*.gcno
+*.lcov
+coverage/
+
+# --- Test / benchmark outputs ---
+*.bench
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.iml
+
+# Vim / Neovim
 *.swp
+*.swo
+*~
+
+# --- OS-specific junk ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Environment / local config ---
+.env
+.env.*
+!.env.example
+
+# --- Logs / temporary files ---
+*.log
+tmp/
+temp/
+
+# --- Terminal recording assets (optional) ---
+*.cast
+
+# --- Local tooling caches ---
+.cache/
