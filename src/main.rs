@@ -18,6 +18,7 @@ use snake::game::{GameState, GameStatus};
 use snake::input::{GameInput, InputConfig, InputHandler};
 use snake::platform::Platform;
 use snake::renderer;
+use snake::score::{load_high_score, save_high_score};
 use snake::ui::hud::HudInfo;
 
 #[derive(Debug, Parser)]
@@ -46,10 +47,11 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     });
     let mut state = GameState::new((DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT));
     state.status = GameStatus::Paused;
-    let mut high_score = 0;
+    let mut high_score = load_high_score();
 
     let controller_enabled = !cli.no_controller && !platform.is_wsl();
     let mut last_tick = Instant::now();
+    let mut last_status = state.status;
 
     loop {
         terminal.draw(|frame| {
@@ -75,8 +77,20 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         let tick_interval = tick_interval_for_speed(state.speed_level);
         if last_tick.elapsed() >= tick_interval {
             state.tick();
-            high_score = high_score.max(state.score);
             last_tick = Instant::now();
+        }
+
+        if state.status != last_status {
+            if matches!(state.status, GameStatus::GameOver | GameStatus::Victory)
+                && state.score > high_score
+            {
+                high_score = state.score;
+                if let Err(error) = save_high_score(high_score) {
+                    eprintln!("Failed to save high score: {error}");
+                }
+            }
+
+            last_status = state.status;
         }
 
         thread::sleep(Duration::from_millis(16));
