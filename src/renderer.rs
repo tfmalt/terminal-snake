@@ -39,8 +39,8 @@ pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_
     let inner = block.inner(play_area);
     frame.render_widget(block, play_area);
 
-    render_food(frame, inner, state);
-    render_snake(frame, inner, state);
+    render_food(frame, inner, state, hud_info.monochrome);
+    render_snake(frame, inner, state, hud_info.monochrome);
 
     if is_start_screen(state) {
         render_start_menu(frame, play_area, hud_info.high_score);
@@ -80,18 +80,16 @@ fn status_title(status: GameStatus, platform: Platform) -> &'static str {
     }
 }
 
-fn render_food(frame: &mut Frame<'_>, inner: Rect, state: &GameState) {
+fn render_food(frame: &mut Frame<'_>, inner: Rect, state: &GameState, monochrome: bool) {
     let Some((x, y)) = logical_to_terminal(inner, state.bounds(), state.food.position) else {
         return;
     };
 
     let (glyph, style) = match state.food.kind {
-        FoodKind::Normal => (GLYPH_FOOD, Style::default().fg(Color::Red)),
+        FoodKind::Normal => (GLYPH_FOOD, style_with_color(monochrome, Color::Red, false)),
         FoodKind::Bonus { .. } => (
             GLYPH_FOOD_BONUS,
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            style_with_color(monochrome, Color::Yellow, true),
         ),
     };
 
@@ -99,7 +97,7 @@ fn render_food(frame: &mut Frame<'_>, inner: Rect, state: &GameState) {
     buffer.set_string(x, y, glyph, style);
 }
 
-fn render_snake(frame: &mut Frame<'_>, inner: Rect, state: &GameState) {
+fn render_snake(frame: &mut Frame<'_>, inner: Rect, state: &GameState, monochrome: bool) {
     let head = state.snake.head();
     let tail = state.snake.segments().last().copied();
 
@@ -115,20 +113,39 @@ fn render_snake(frame: &mut Frame<'_>, inner: Rect, state: &GameState) {
                 x,
                 y,
                 glyph,
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
+                style_with_color(monochrome, Color::Green, true),
             );
             continue;
         }
 
         if Some(*segment) == tail {
-            buffer.set_string(x, y, GLYPH_SNAKE_TAIL, Style::default().fg(Color::DarkGray));
+            buffer.set_string(
+                x,
+                y,
+                GLYPH_SNAKE_TAIL,
+                style_with_color(monochrome, Color::DarkGray, false),
+            );
             continue;
         }
 
-        buffer.set_string(x, y, GLYPH_SNAKE_BODY, Style::default().fg(Color::Green));
+        buffer.set_string(
+            x,
+            y,
+            GLYPH_SNAKE_BODY,
+            style_with_color(monochrome, Color::Green, false),
+        );
     }
+}
+
+fn style_with_color(monochrome: bool, color: Color, bold: bool) -> Style {
+    let mut style = Style::default();
+    if !monochrome {
+        style = style.fg(color);
+    }
+    if bold {
+        style = style.add_modifier(Modifier::BOLD);
+    }
+    style
 }
 
 fn head_glyph(direction: Direction) -> &'static str {

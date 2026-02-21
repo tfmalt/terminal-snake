@@ -13,6 +13,7 @@ pub struct HudInfo {
     pub high_score: u32,
     pub game_over_reference_high_score: u32,
     pub controller_enabled: bool,
+    pub monochrome: bool,
 }
 
 impl Default for HudInfo {
@@ -21,6 +22,7 @@ impl Default for HudInfo {
             high_score: 0,
             game_over_reference_high_score: 0,
             controller_enabled: true,
+            monochrome: false,
         }
     }
 }
@@ -47,11 +49,7 @@ pub fn render_hud(
     frame.render_widget(
         Paragraph::new(Line::from(left_text))
             .alignment(Alignment::Left)
-            .style(
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            .style(left_style(info.monochrome)),
         left,
     );
 
@@ -77,4 +75,14 @@ pub fn render_hud(
     );
 
     play_area
+}
+
+fn left_style(monochrome: bool) -> Style {
+    if monochrome {
+        Style::default().add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
+    }
 }

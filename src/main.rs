@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use crossterm::cursor::{Hide, Show};
 use crossterm::execute;
+use crossterm::terminal;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
@@ -23,9 +24,31 @@ use snake::ui::hud::HudInfo;
 
 #[derive(Debug, Parser)]
 struct Cli {
+    /// Starting speed level.
+    #[arg(long, default_value_t = 1)]
+    speed: u32,
+
+    /// Grid width in logical cells.
+    #[arg(long, default_value_t = DEFAULT_GRID_WIDTH)]
+    width: u16,
+
+    /// Grid height in logical cells.
+    #[arg(long, default_value_t = DEFAULT_GRID_HEIGHT)]
+    height: u16,
+
     /// Disable controller input even when available.
     #[arg(long = "no-controller")]
     no_controller: bool,
+
+    /// Disable colored rendering.
+    #[arg(long = "no-color")]
+    no_color: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AppConfig {
+    bounds: (u16, u16),
+    starting_speed: u32,
 }
 
 fn main() -> io::Result<()> {
@@ -40,12 +63,18 @@ fn main() -> io::Result<()> {
 }
 
 fn run(cli: Cli, platform: Platform) -> io::Result<()> {
+    let app_config = AppConfig {
+        bounds: (cli.width, cli.height),
+        starting_speed: cli.speed,
+    };
+    validate_terminal_size(app_config.bounds)?;
+
     let mut terminal = setup_terminal()?;
     let mut input = InputHandler::new(InputConfig {
         enable_controller: !cli.no_controller,
         is_wsl: platform.is_wsl(),
     });
-    let mut state = GameState::new((DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT));
+    let mut state = GameState::new_with_options(app_config.bounds, app_config.starting_speed);
     state.status = GameStatus::Paused;
     let mut high_score = load_high_score();
     let mut game_over_reference_high_score = high_score;
@@ -64,6 +93,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     high_score,
                     game_over_reference_high_score,
                     controller_enabled,
+                    monochrome: cli.no_color,
                 },
             )
         })?;
@@ -73,7 +103,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 break;
             }
 
-            handle_input(&mut state, game_input);
+            handle_input(&mut state, game_input, app_config);
         }
 
         let tick_interval = tick_interval_for_speed(state.speed_level);
@@ -103,7 +133,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     Ok(())
 }
 
-fn handle_input(state: &mut GameState, input: GameInput) {
+fn handle_input(state: &mut GameState, input: GameInput, app_config: AppConfig) {
     match input {
         GameInput::Confirm if is_start_screen(state) => {
             state.status = GameStatus::Playing;
@@ -111,11 +141,29 @@ fn handle_input(state: &mut GameState, input: GameInput) {
         GameInput::Confirm
             if matches!(state.status, GameStatus::GameOver | GameStatus::Victory) =>
         {
-            *state = GameState::new(state.bounds());
+            *state = GameState::new_with_options(app_config.bounds, app_config.starting_speed);
             state.status = GameStatus::Paused;
         }
         other => state.apply_input(other),
     }
+}
+
+fn validate_terminal_size(bounds: (u16, u16)) -> io::Result<()> {
+    let (terminal_width, terminal_height) = terminal::size()?;
+
+    let required_width = bounds.0.saturating_mul(2).saturating_add(2);
+    let required_height = bounds.1.saturating_add(3);
+
+    if terminal_width < required_width || terminal_height < required_height {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Terminal too small: need at least {required_width}x{required_height}, got {terminal_width}x{terminal_height}. Try --width/--height or resize terminal."
+            ),
+        ));
+    }
+
+    Ok(())
 }
 
 fn is_start_screen(state: &GameState) -> bool {
