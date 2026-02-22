@@ -186,7 +186,7 @@ fn handle_input(state: &mut GameState, input: GameInput) {
 /// This uses the exact same dimensions as the renderer, eliminating any
 /// possible mismatch between the logical grid and the visual border.
 fn grid_bounds_from_frame(size: Size, cli: &Cli) -> io::Result<GridSize> {
-    let hud_rows: u16 = 1 + u16::from(cli.debug);
+    let hud_rows: u16 = 2 + u16::from(cli.debug);
 
     let min_w: u16 = 5;
     let min_h: u16 = 4 + hud_rows;

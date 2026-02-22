@@ -21,7 +21,6 @@ pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_
 
     let theme = hud_info.theme;
     let block = Block::bordered()
-        .title(status_title(state.status, platform))
         .border_set(BORDER_HALF_BLOCK)
         .border_style(Style::new().fg(theme.border_fg).bg(theme.border_bg));
 
@@ -47,23 +46,6 @@ pub fn render(frame: &mut Frame<'_>, state: &GameState, platform: Platform, hud_
             hud_info.theme,
         ),
         _ => {}
-    }
-}
-
-fn status_title(status: GameStatus, platform: Platform) -> &'static str {
-    if status == GameStatus::Paused {
-        return " paused ";
-    }
-    if status == GameStatus::GameOver {
-        return " game over ";
-    }
-    if status == GameStatus::Victory {
-        return " victory ";
-    }
-    if platform.is_wsl() {
-        " snake (wsl) "
-    } else {
-        " snake "
     }
 }
 
