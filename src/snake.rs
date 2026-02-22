@@ -45,6 +45,7 @@ pub struct Snake {
     body: VecDeque<Position>,
     direction: Direction,
     buffered_direction: Direction,
+    next_buffered_direction: Option<Direction>,
     grow: bool,
 }
 
@@ -59,6 +60,7 @@ impl Snake {
             body,
             direction,
             buffered_direction: direction,
+            next_buffered_direction: None,
             grow: false,
         }
     }
@@ -70,6 +72,7 @@ impl Snake {
             body: VecDeque::from(segments),
             direction,
             buffered_direction: direction,
+            next_buffered_direction: None,
             grow: false,
         }
     }
@@ -84,8 +87,11 @@ impl Snake {
         debug_assert!(bounds.width > 0 && bounds.height > 0);
 
         self.direction = self.buffered_direction;
-
         let next_head = self.next_head_position();
+
+        if let Some(next) = self.next_buffered_direction.take() {
+            self.buffered_direction = next;
+        }
 
         self.body.push_front(next_head);
         if !self.grow {
@@ -118,19 +124,27 @@ impl Snake {
         }
     }
 
-    /// Buffers the next direction if it is not a direct reversal.
+    /// Buffers the next direction, supporting a two-deep queue for quick turns.
+    ///
+    /// When no turn is queued yet, the direction is stored as the primary
+    /// buffered direction (rejecting direct reversals of the current direction).
+    /// When a turn is already queued, a second direction is stored with
+    /// last-input-wins semantics (rejecting reversals of the *queued* direction).
     pub fn buffer_direction(&mut self, direction: Direction) {
-        // Allow at most one queued turn per tick. This prevents rapid key-repeat
-        // events from overwriting an already queued direction before movement.
-        if self.buffered_direction != self.direction {
-            return;
+        if self.buffered_direction == self.direction {
+            // No turn queued yet — reject reversal of the current direction.
+            if direction == self.direction.opposite() {
+                return;
+            }
+            self.buffered_direction = direction;
+        } else {
+            // A turn is already queued — queue a second one.
+            // Reject reversal of the *queued* direction, not the current one.
+            if direction == self.buffered_direction.opposite() {
+                return;
+            }
+            self.next_buffered_direction = Some(direction);
         }
-
-        if direction == self.direction.opposite() {
-            return;
-        }
-
-        self.buffered_direction = direction;
     }
 
     /// Returns the current head position.
@@ -240,18 +254,79 @@ mod tests {
     }
 
     #[test]
-    fn direction_buffer_consumes_at_most_one_turn_per_tick() {
-        let mut snake = Snake::new(Position { x: 5, y: 5 }, Direction::Down);
-
-        snake.buffer_direction(Direction::Right);
-        snake.buffer_direction(Direction::Down);
-        snake.buffer_direction(Direction::Left);
-
-        snake.move_forward(GridSize {
+    fn direction_buffer_two_deep_queue() {
+        let bounds = GridSize {
             width: 40,
             height: 20,
-        });
+        };
+        let mut snake = Snake::new(Position { x: 5, y: 5 }, Direction::Down);
 
+        // Buffer Right, then Up within one tick.
+        // Right goes into buffered_direction, Up into next_buffered.
+        snake.buffer_direction(Direction::Right);
+        snake.buffer_direction(Direction::Up);
+
+        // First tick consumes Right, promotes Up into buffered.
+        snake.move_forward(bounds);
         assert_eq!(snake.head(), Position { x: 6, y: 5 });
+
+        // Second tick consumes Up (the promoted second direction).
+        snake.move_forward(bounds);
+        assert_eq!(snake.head(), Position { x: 6, y: 4 });
+    }
+
+    #[test]
+    fn direction_buffer_allows_180_turn_via_two_step_queue() {
+        let bounds = GridSize {
+            width: 40,
+            height: 20,
+        };
+        let mut snake = Snake::new(Position { x: 5, y: 5 }, Direction::Left);
+
+        // Buffer Right (perpendicular), then Down.
+        snake.buffer_direction(Direction::Up);
+        snake.buffer_direction(Direction::Right);
+
+        // First tick: moves Up.
+        snake.move_forward(bounds);
+        assert_eq!(snake.head(), Position { x: 5, y: 4 });
+
+        // Second tick: moves Right (promoted from next_buffered).
+        snake.move_forward(bounds);
+        assert_eq!(snake.head(), Position { x: 6, y: 4 });
+    }
+
+    #[test]
+    fn direction_buffer_second_slot_uses_last_input() {
+        let bounds = GridSize {
+            width: 40,
+            height: 20,
+        };
+        let mut snake = Snake::new(Position { x: 5, y: 5 }, Direction::Down);
+
+        // Buffer Right into primary, then Up, then Down into second slot.
+        // Down should win (last-input-wins).
+        snake.buffer_direction(Direction::Right);
+        snake.buffer_direction(Direction::Up);
+        snake.buffer_direction(Direction::Down);
+
+        snake.move_forward(bounds);
+        assert_eq!(snake.head(), Position { x: 6, y: 5 });
+
+        // Down was the last input for the second slot.
+        snake.move_forward(bounds);
+        assert_eq!(snake.head(), Position { x: 6, y: 6 });
+    }
+
+    #[test]
+    fn direction_buffer_rejects_reversal_of_queued_direction() {
+        let mut snake = Snake::new(Position { x: 5, y: 5 }, Direction::Down);
+
+        // Buffer Right into primary.
+        snake.buffer_direction(Direction::Right);
+        // Left is the opposite of Right (the queued direction) — should be rejected.
+        snake.buffer_direction(Direction::Left);
+
+        assert!(snake.next_buffered_direction.is_none());
     }
 }
