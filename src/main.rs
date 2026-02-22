@@ -6,16 +6,13 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use crossterm::cursor::{Hide, Show};
 use crossterm::execute;
-use crossterm::terminal;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Size;
 use ratatui::Terminal;
-use snake::config::{
-    DEFAULT_GRID_HEIGHT, DEFAULT_GRID_WIDTH, DEFAULT_TICK_INTERVAL_MS, MIN_TICK_INTERVAL_MS,
-    GridSize,
-};
+use snake::config::{DEFAULT_TICK_INTERVAL_MS, MIN_TICK_INTERVAL_MS, GridSize};
 use snake::game::{GameState, GameStatus};
 use snake::input::{GameInput, InputConfig, InputHandler};
 use snake::platform::Platform;
@@ -29,13 +26,13 @@ struct Cli {
     #[arg(long, default_value_t = 1)]
     speed: u32,
 
-    /// Grid width in logical cells.
-    #[arg(long, default_value_t = DEFAULT_GRID_WIDTH)]
-    width: u16,
+    /// Grid width in logical cells (defaults to terminal width).
+    #[arg(long)]
+    width: Option<u16>,
 
-    /// Grid height in logical cells.
-    #[arg(long, default_value_t = DEFAULT_GRID_HEIGHT)]
-    height: u16,
+    /// Grid height in logical cells (defaults to terminal height).
+    #[arg(long)]
+    height: Option<u16>,
 
     /// Disable controller input even when available.
     #[arg(long = "no-controller")]
@@ -62,9 +59,6 @@ fn main() -> io::Result<()> {
 }
 
 fn run(cli: Cli, platform: Platform) -> io::Result<()> {
-    let bounds = GridSize { width: cli.width, height: cli.height };
-    validate_terminal_size(bounds)?;
-
     // Load before entering raw mode so any warning prints to a clean terminal.
     let mut high_score = load_high_score().unwrap_or_else(|e| {
         eprintln!("Warning: failed to load high score: {e}");
@@ -72,6 +66,11 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     });
 
     let mut terminal = setup_terminal()?;
+
+    // Derive grid bounds from ratatui's own size so the logical grid
+    // matches the exact frame area the renderer will use.
+    let frame_area = terminal.size()?;
+    let bounds = grid_bounds_from_frame(frame_area, &cli)?;
     let mut input = InputHandler::new(InputConfig {
         enable_controller: !cli.no_controller,
         is_wsl: platform.is_wsl(),
@@ -160,22 +159,34 @@ fn handle_input(state: &mut GameState, input: GameInput) {
     }
 }
 
-fn validate_terminal_size(bounds: GridSize) -> io::Result<()> {
-    let (terminal_width, terminal_height) = terminal::size()?;
+/// Derives grid bounds from the ratatui frame area.
+///
+/// This uses the exact same dimensions as the renderer, eliminating any
+/// possible mismatch between the logical grid and the visual border.
+fn grid_bounds_from_frame(size: Size, cli: &Cli) -> io::Result<GridSize> {
+    let hud_rows: u16 = 1 + u16::from(cli.debug);
 
-    let required_width = bounds.width.saturating_add(2);
-    let required_height = bounds.height.saturating_add(4);
-
-    if terminal_width < required_width || terminal_height < required_height {
+    let min_w: u16 = 5;
+    let min_h: u16 = 4 + hud_rows;
+    if size.width < min_w || size.height < min_h {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
-                "Terminal too small: need at least {required_width}x{required_height}, got {terminal_width}x{terminal_height}. Try --width/--height or resize terminal."
+                "Terminal too small: need at least {min_w}x{min_h}, got {}x{}.",
+                size.width, size.height,
             ),
         ));
     }
 
-    Ok(())
+    // play_area = full width, full height minus HUD/debug rows.
+    // inner = play_area minus 2 for the border (1 each side).
+    let inner_w = size.width.saturating_sub(2);
+    let inner_h = size.height.saturating_sub(2 + hud_rows);
+
+    let width = cli.width.unwrap_or(inner_w).min(inner_w);
+    let height = cli.height.unwrap_or(inner_h).min(inner_h);
+
+    Ok(GridSize { width, height })
 }
 
 fn format_debug_line(

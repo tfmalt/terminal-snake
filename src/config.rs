@@ -16,12 +16,6 @@ impl GridSize {
     }
 }
 
-/// Default logical grid width in cells.
-pub const DEFAULT_GRID_WIDTH: u16 = 40;
-
-/// Default logical grid height in cells.
-pub const DEFAULT_GRID_HEIGHT: u16 = 20;
-
 /// Base tick interval in milliseconds.
 pub const DEFAULT_TICK_INTERVAL_MS: u64 = 200;
 
