@@ -7,12 +7,12 @@ use clap::Parser;
 use crossterm::cursor::{Hide, Show};
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Size;
-use ratatui::Terminal;
-use snake::config::{DEFAULT_TICK_INTERVAL_MS, MIN_TICK_INTERVAL_MS, GridSize, THEMES};
+use snake::config::{DEFAULT_TICK_INTERVAL_MS, GridSize, MIN_TICK_INTERVAL_MS, THEMES};
 use snake::game::{GameState, GameStatus};
 use snake::input::{GameInput, InputConfig, InputHandler};
 use snake::platform::Platform;
@@ -38,10 +38,6 @@ struct Cli {
     #[arg(long = "no-controller")]
     no_controller: bool,
 
-    /// Disable colored rendering (forces Mono theme, disables theme cycling).
-    #[arg(long = "no-color")]
-    no_color: bool,
-
     /// Show diagnostic debug line at the bottom of the screen.
     #[arg(long)]
     debug: bool,
@@ -65,12 +61,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         0
     });
 
-    let mut selected_theme_idx = if cli.no_color {
-        THEMES
-            .iter()
-            .position(|t| t.name == "Mono")
-            .unwrap_or(THEMES.len() - 1)
-    } else {
+    let mut selected_theme_idx = {
         let saved_name = load_theme_name().unwrap_or(None);
         saved_name
             .as_deref()
@@ -128,7 +119,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
             }
 
             match game_input {
-                GameInput::CycleTheme if state.is_start_screen() && !cli.no_color => {
+                GameInput::CycleTheme if state.is_start_screen() => {
                     selected_theme_idx = (selected_theme_idx + 1) % THEMES.len();
                     if let Err(e) = save_theme_name(THEMES[selected_theme_idx].name) {
                         eprintln!("Failed to save theme: {e}");
@@ -205,8 +196,12 @@ fn grid_bounds_from_frame(size: Size, cli: &Cli) -> io::Result<GridSize> {
     let inner_w = size.width.saturating_sub(2);
     let inner_h = size.height.saturating_sub(2 + hud_rows);
 
+    // Each terminal row holds 2 game rows (half-block rendering),
+    // so the logical game height is double the available terminal rows.
+    let game_h = inner_h.saturating_mul(2);
+
     let width = cli.width.unwrap_or(inner_w).min(inner_w);
-    let height = cli.height.unwrap_or(inner_h).min(inner_h);
+    let height = cli.height.unwrap_or(game_h).min(game_h);
 
     Ok(GridSize { width, height })
 }
