@@ -23,9 +23,14 @@ impl GridSize {
 #[derive(Debug)]
 pub struct Theme {
     pub name: &'static str,
-    pub snake_head: Color,
-    pub snake_body: Color,
-    pub snake_tail: Color,
+    /// Background color shared by all snake segments.
+    pub snake_bg: Color,
+    /// Foreground color for the head glyph.
+    pub snake_head_fg: Color,
+    /// Foreground color for body segment glyphs.
+    pub snake_body_fg: Color,
+    /// Foreground color for the tail glyph.
+    pub snake_tail_fg: Color,
     pub food: Color,
     pub border_fg: Color,
     pub border_bg: Color,
@@ -34,12 +39,13 @@ pub struct Theme {
     pub menu_footer: Color,
 }
 
-/// Classic green-on-dark theme.
+/// Classic blue snake on dark theme.
 pub const THEME_CLASSIC: Theme = Theme {
     name: "Classic",
-    snake_head: Color::Green,
-    snake_body: Color::Green,
-    snake_tail: Color::DarkGray,
+    snake_bg: Color::Blue,
+    snake_head_fg: Color::LightBlue,
+    snake_body_fg: Color::LightBlue,
+    snake_tail_fg: Color::LightBlue,
     food: Color::Red,
     border_fg: Color::White,
     border_bg: Color::DarkGray,
@@ -48,12 +54,13 @@ pub const THEME_CLASSIC: Theme = Theme {
     menu_footer: Color::DarkGray,
 };
 
-/// Ocean blue/cyan theme.
+/// Ocean cyan theme.
 pub const THEME_OCEAN: Theme = Theme {
     name: "Ocean",
-    snake_head: Color::Cyan,
-    snake_body: Color::Cyan,
-    snake_tail: Color::Blue,
+    snake_bg: Color::Cyan,
+    snake_head_fg: Color::LightCyan,
+    snake_body_fg: Color::LightCyan,
+    snake_tail_fg: Color::LightCyan,
     food: Color::Yellow,
     border_fg: Color::Cyan,
     border_bg: Color::DarkGray,
@@ -65,9 +72,10 @@ pub const THEME_OCEAN: Theme = Theme {
 /// Neon magenta/yellow theme.
 pub const THEME_NEON: Theme = Theme {
     name: "Neon",
-    snake_head: Color::Magenta,
-    snake_body: Color::Magenta,
-    snake_tail: Color::DarkGray,
+    snake_bg: Color::Magenta,
+    snake_head_fg: Color::LightMagenta,
+    snake_body_fg: Color::LightMagenta,
+    snake_tail_fg: Color::LightMagenta,
     food: Color::Yellow,
     border_fg: Color::Magenta,
     border_bg: Color::Black,
@@ -79,9 +87,10 @@ pub const THEME_NEON: Theme = Theme {
 /// Monochrome theme (terminal default colors, no styling).
 pub const THEME_MONO: Theme = Theme {
     name: "Mono",
-    snake_head: Color::Reset,
-    snake_body: Color::Reset,
-    snake_tail: Color::Reset,
+    snake_bg: Color::Reset,
+    snake_head_fg: Color::Reset,
+    snake_body_fg: Color::Reset,
+    snake_tail_fg: Color::Reset,
     food: Color::Reset,
     border_fg: Color::Reset,
     border_bg: Color::Reset,
@@ -131,8 +140,8 @@ pub const GLYPH_SNAKE_HEAD_LEFT: &str = "◀";
 /// Head glyph when moving right.
 pub const GLYPH_SNAKE_HEAD_RIGHT: &str = "▶";
 
-/// Body glyph.
-pub const GLYPH_SNAKE_BODY: &str = "█";
+/// Body glyph — a centered square so the cell background is visible around it.
+pub const GLYPH_SNAKE_BODY: &str = "■";
 
 /// Tail glyph.
 pub const GLYPH_SNAKE_TAIL: &str = "▓";

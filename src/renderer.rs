@@ -85,7 +85,8 @@ fn render_snake(
                 y,
                 glyph,
                 Style::new()
-                    .fg(theme.snake_head)
+                    .fg(theme.snake_head_fg)
+                    .bg(theme.snake_bg)
                     .add_modifier(Modifier::BOLD),
             );
             continue;
@@ -96,7 +97,7 @@ fn render_snake(
                 x,
                 y,
                 GLYPH_SNAKE_TAIL,
-                Style::new().fg(theme.snake_tail),
+                Style::new().fg(theme.snake_tail_fg).bg(theme.snake_bg),
             );
             continue;
         }
@@ -105,7 +106,7 @@ fn render_snake(
             x,
             y,
             GLYPH_SNAKE_BODY,
-            Style::new().fg(theme.snake_body),
+            Style::new().fg(theme.snake_body_fg).bg(theme.snake_bg),
         );
     }
 }
