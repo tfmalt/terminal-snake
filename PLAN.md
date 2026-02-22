@@ -5,7 +5,7 @@ Complete phases in order — later phases build on earlier ones.
 
 ---
 
-## Phase 1: Project Scaffold
+## Phase 1: Project Scaffold [x Completed]
 
 Get a compilable project with the correct dependency graph and CI skeleton in
 place before writing any game code.
@@ -36,7 +36,7 @@ place before writing any game code.
 
 ---
 
-## Phase 2: Terminal Initialization and Teardown
+## Phase 2: Terminal Initialization and Teardown [x Completed]
 
 Establish reliable terminal setup/teardown before drawing anything. This is
 the foundation everything else builds on.
@@ -57,7 +57,7 @@ the foundation everything else builds on.
 
 ---
 
-## Phase 3: Input Handling
+## Phase 3: Input Handling [x Completed]
 
 Build the unified input abstraction before wiring up game logic.
 
@@ -85,7 +85,7 @@ Build the unified input abstraction before wiring up game logic.
 
 ---
 
-## Phase 4: Game State and Logic
+## Phase 4: Game State and Logic [x Completed]
 
 Pure logic with no rendering. This module must be fully unit-testable.
 
@@ -125,7 +125,7 @@ Pure logic with no rendering. This module must be fully unit-testable.
 
 ---
 
-## Phase 5: Renderer
+## Phase 5: Renderer [x Completed]
 
 Translate game state to terminal output using ratatui. No game logic here.
 
@@ -157,7 +157,7 @@ Translate game state to terminal output using ratatui. No game logic here.
 
 ---
 
-## Phase 6: Menus and Screens
+## Phase 6: Menus and Screens [x Completed]
 
 - [ ] Implement `menu.rs` with the following screens, rendered as ratatui
   overlays/popups:
@@ -171,7 +171,7 @@ Translate game state to terminal output using ratatui. No game logic here.
 
 ---
 
-## Phase 7: High Score Persistence
+## Phase 7: High Score Persistence [x Completed]
 
 - [ ] Implement `score.rs`:
   - `fn scores_path() -> PathBuf` — platform-correct path via `dirs` crate
@@ -183,7 +183,7 @@ Translate game state to terminal output using ratatui. No game logic here.
 
 ---
 
-## Phase 8: CLI and Configuration
+## Phase 8: CLI and Configuration [x Completed]
 
 - [ ] Define `Cli` struct in `main.rs` using `clap` derive:
   - `--speed <1-5>` — starting speed level (default: 1)
@@ -197,7 +197,7 @@ Translate game state to terminal output using ratatui. No game logic here.
 
 ---
 
-## Phase 9: CI and Release Pipeline
+## Phase 9: CI and Release Pipeline [ ]
 
 - [ ] Write `.github/workflows/ci.yml`:
   - Trigger on push and pull_request
@@ -221,7 +221,7 @@ Translate game state to terminal output using ratatui. No game logic here.
 
 ---
 
-## Phase 10: Polish and Extras
+## Phase 10: Polish and Extras [ ]
 
 Nice-to-haves after the game is fully functional.
 
