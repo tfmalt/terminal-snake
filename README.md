@@ -1,6 +1,10 @@
 # Terminal Snake
 
-This is a retro terminal-based Snake game written in Rust. The goal of the project was to learn Rust, try out a ton of different code generating AI models using Opencode and Claude Code, while creating the ultimate terminal "making time pass while compiling / waiting for the AI-model to finish thinking" snake game.
+This is a pretty cool retro terminal-based Snake game written in Rust. 
+
+The goal of the project was to learn Rust and try out a ton of different code generating AI models and tools. I've mainly using Opencode and Claude Code.
+
+At the same time create the terminal "making time pass while compiling -> waiting for the AI-model to finish thinking" snake game.
 
 ```
                       ▀
