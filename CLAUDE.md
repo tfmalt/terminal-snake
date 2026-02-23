@@ -119,9 +119,9 @@ degrades silently.
 ### High Score Persistence
 
 Scores are saved to a platform-appropriate path:
-- Linux/WSL: `~/.local/share/snake/scores.json`
-- macOS: `~/Library/Application Support/snake/scores.json`
-- Windows: `%APPDATA%\snake\scores.json`
+- Linux/WSL: `~/.local/share/terminal-snake/scores.json`
+- macOS: `~/Library/Application Support/terminal-snake/scores.json`
+- Windows: `%APPDATA%\terminal-snake\scores.json`
 
 Use the `dirs` crate to resolve these paths at runtime.
 

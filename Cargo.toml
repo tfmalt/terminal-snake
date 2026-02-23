@@ -1,6 +1,6 @@
 [package]
-name = "snake"
-version = "0.6.11"
+name = "terminal-snake"
+version = "0.6.24"
 edition = "2024"
 autobins = false
 
@@ -23,3 +23,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
 unicode-width = "0.1"
+
+[build-dependencies]
+serde_json = "1"

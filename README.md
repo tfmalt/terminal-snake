@@ -100,10 +100,8 @@ Screenshot/GIF to be added after renderer and gameplay phases are complete.
 
 Theme loading precedence (later overrides earlier):
 
-1. Bundled built-in themes
-2. `~/.config/opencode/themes/*.json` (or `$XDG_CONFIG_HOME/opencode/themes/*.json`)
-3. `<project-root>/.opencode/themes/*.json`
-4. `./.opencode/themes/*.json`
+1. Embedded built-in themes (compiled from `assets/themes/*.json`)
+2. `~/.config/terminal-snake/themes/*.json` (or `$XDG_CONFIG_HOME/terminal-snake/themes/*.json`)
 
 ## License
 
