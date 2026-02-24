@@ -1,37 +1,11 @@
 # Terminal Snake
 
-This is a pretty cool retro terminal-based Snake game written in Rust. 
+This is a retro terminal-based Snake game written in Rust, with a modern terminal first
+interface. 
 
-The goal of the project was to learn Rust and try out a ton of different code generating AI models and tools. I've mainly used Opencode and Claude Code.
-
-At the same time create the terminal "making time pass while compiling -> waiting for the AI-model to finish thinking" snake game.
-
-```
-                      ▀
-▀▀█▀▀ █▀▀█ ▄▀▀▀ █▀▄▀▄ █ █▀▀▄ ▀▀▀█ █       █▀▀▀ █▀▀▄ ▀▀▀█ █  █ █▀▀█
-  █   █▀▀▀ █    █ █ █ █ █  █ █▀▀█ █       ▀▀▀█ █  █ █▀▀█ █▀▀▄ █▀▀▀
-  ▀   ▀▀▀▀ ▀    ▀ ▀ ▀ ▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀    ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀
-```
+As someone who enjoy doing work in the terminal I wanted to create a "making time pass while compiling -> waiting for the AI-model to finish thinking" snake game with a modern TUI feel.
 
 ![Terminal Snake gameplay screenshot](assets/screenshots/terminal-snake.png)
-
-## Features
-
-- **Half-block rendering** — every game cell is two Unicode half-block
-  characters composited together, giving a smooth, colorful appearance without
-  color-emoji dependency.
-- **Game controller support** — D-pad and analog stick via `gilrs` (disabled
-  automatically on WSL).
-- **12 built-in themes** — Ayu, Catppuccin, Ember, Everforest, Gruvbox,
-  Matrix, Nord, One Dark, OpenCode, System, tm, and Tokyo Night. 
-- **User themes** — drop JSON files into
-  `~/.config/terminal-snake/themes/` (or `$XDG_CONFIG_HOME/terminal-snake/themes/`)
-  to add or override themes at runtime.
-- **In-game theme picker** — browse themes from the start menu or pause menu;
-  selection is saved and restored between runs.
-- **Terminal resize handling** — the game grid resizes live as the terminal
-  window changes size. Resize the terminal mid game and continue playing.
-
 
 ## Requirements
 
@@ -86,6 +60,14 @@ The binary is placed at `target/release/terminal-snake`.
 
 ## Running
 
+If installed via package:
+
+```bash
+terminal-snake
+```
+
+If you've downloaded the source:
+
 ```bash
 cargo run --release
 # or after building:
@@ -105,6 +87,24 @@ Options:
   -h, --help             Print help
 ```
 
+## Features
+
+- **Half-block rendering** — every game cell is two Unicode half-block
+  characters composited together, giving a smooth, colorful appearance without
+  color-emoji dependency.
+- **Game controller support** — D-pad and analog stick via `gilrs` (disabled
+  automatically on WSL).
+- **12 built-in themes** — Ayu, Catppuccin, Ember, Everforest, Gruvbox,
+  Matrix, Nord, One Dark, OpenCode, System, tm, and Tokyo Night. 
+- **User themes** — drop JSON files into
+  `~/.config/terminal-snake/themes/` (or `$XDG_CONFIG_HOME/terminal-snake/themes/`)
+  to add or override themes at runtime.
+- **In-game theme picker** — browse themes from the start menu or pause menu;
+  selection is saved and restored between runs.
+- **Terminal resize handling** — the game grid resizes live as the terminal
+  window changes size. Resize the terminal mid game and continue playing.
+
+
 ## Controls
 
 | Action          | Keyboard                        | Controller         |
@@ -117,19 +117,6 @@ Options:
 
 In menus, `Up`/`Down` navigate items and `Enter`/`Space`/`→` confirms.
 Press `Esc`/`←`/`Enter` to close the inline theme picker.
-
-## Windows smoke-test checklist
-
-Run this in PowerShell + Windows Terminal:
-
-1. Start game: `cargo run --release` (or built `.exe`) and verify HUD/menu render cleanly.
-2. Press `Ctrl+C`, `Q`, and menu `Quit` in separate runs; confirm shell returns with cursor visible.
-3. Resize Windows Terminal repeatedly while playing and while paused; confirm game keeps running and redraws correctly.
-4. Trigger startup failure with tiny window size; confirm terminal is restored after exit.
-5. Confirm glyphs (`▀`, `▄`, `█`, menu separators) look correct with Cascadia Mono/Code.
-6. Run once to create persistence, then verify `%LOCALAPPDATA%\terminal-snake\scores.json` exists.
-7. Corrupt `scores.json` manually and relaunch; confirm warning is shown and game still starts.
-8. Test fallback: run with `--ascii-glyphs`; confirm game remains playable with degraded visuals.
 
 ## Themes
 
@@ -202,30 +189,6 @@ src/
   bin/
     fontest.rs     Font/glyph preview utility
 ```
-
-## Distribution
-
-Binaries are published via GitHub Actions on version tags (`v*`).
-Targets:
-
-- `x86_64-unknown-linux-gnu`
-- `aarch64-unknown-linux-gnu`
-- `x86_64-apple-darwin`
-- `aarch64-apple-darwin`
-- `x86_64-pc-windows-msvc`
-
-Each release also includes a `SHA256SUMS` file with checksums for every
-published archive (`*.tar.gz`, `*.zip`).
-
-### Package manager metadata
-
-Canonical package IDs used for package-manager publishing:
-
-- Homebrew formula: `terminal-snake`
-- winget package ID: `ThomasMalt.TerminalSnake`
-
-Homebrew tap source lives at `tfmalt/homebrew-tap`.
-Homebrew users install via tap alias `tfmalt/tap`.
 
 ## License
 
