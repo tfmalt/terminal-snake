@@ -1,5 +1,4 @@
 use std::io;
-use std::panic;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -13,8 +12,8 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Size;
 use terminal_snake::config::{
-    DEFAULT_TICK_INTERVAL_MS, GridSize, HUD_BOTTOM_MARGIN_Y, MIN_TICK_INTERVAL_MS,
-    PLAY_AREA_MARGIN_X, PLAY_AREA_MARGIN_Y,
+    DEFAULT_TICK_INTERVAL_MS, GlyphMode, GridSize, HUD_BOTTOM_MARGIN_Y, MIN_TICK_INTERVAL_MS,
+    PLAY_AREA_MARGIN_X, PLAY_AREA_MARGIN_Y, configure_glyphs,
 };
 use terminal_snake::game::{GameState, GameStatus};
 use terminal_snake::input::{Direction, GameInput, InputConfig, InputHandler};
@@ -54,17 +53,18 @@ struct Cli {
     /// Show diagnostic debug line at the bottom of the screen.
     #[arg(long)]
     debug: bool,
+
+    /// Use an ASCII-safe glyph palette for poor font environments.
+    #[arg(long)]
+    ascii_glyphs: bool,
 }
 
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
     let platform = Platform::detect();
+    configure_glyphs(GlyphMode::resolve(cli.ascii_glyphs));
 
-    install_panic_hook();
-
-    run(cli, platform)?;
-    cleanup_terminal()?;
-    Ok(())
+    run(cli, platform)
 }
 
 fn run(cli: Cli, platform: Platform) -> io::Result<()> {
@@ -82,6 +82,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     }
 
     let mut terminal = setup_terminal()?;
+    let _terminal_guard = TerminalGuard;
 
     // Derive grid bounds from ratatui's own size so the logical grid
     // matches the exact frame area the renderer will use.
@@ -105,13 +106,15 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     let mut game_over_menu_selected_idx = 0usize;
     let mut theme_selection_mode: Option<ThemeSelectionMode> = None;
     let mut theme_selection_dirty = false;
+    let mut pending_resize_reconcile = false;
+    let mut last_resize_reconcile = Instant::now();
 
     loop {
-        if let Ok(next_bounds) = grid_bounds_from_frame(terminal.size()?, &cli)
-            && next_bounds != bounds
+        if pending_resize_reconcile || last_resize_reconcile.elapsed() >= Duration::from_millis(250)
         {
-            bounds = next_bounds;
-            state.resize_bounds(bounds);
+            reconcile_resize_if_needed(&mut terminal, &cli, &mut bounds, &mut state)?;
+            pending_resize_reconcile = false;
+            last_resize_reconcile = Instant::now();
         }
 
         terminal.draw(|frame| {
@@ -165,6 +168,11 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         })?;
 
         if let Some(game_input) = input.poll_input()? {
+            if matches!(game_input, GameInput::Resize) {
+                pending_resize_reconcile = true;
+                continue;
+            }
+
             last_input = Some(game_input);
             last_input_tick = Some(state.tick_count);
 
@@ -434,39 +442,56 @@ fn format_debug_line(
     )
 }
 
-fn setup_terminal() -> io::Result<Terminal<CrosstermBackend<io::Stdout>>> {
-    enable_raw_mode()?;
+fn reconcile_resize_if_needed(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    cli: &Cli,
+    bounds: &mut GridSize,
+    state: &mut GameState,
+) -> io::Result<()> {
+    let frame_area = terminal.size()?;
+    let Ok(next_bounds) = grid_bounds_from_frame(frame_area, cli) else {
+        return Ok(());
+    };
 
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, Hide)?;
-
-    let backend = CrosstermBackend::new(stdout);
-    Terminal::new(backend)
-}
-
-fn cleanup_terminal() -> io::Result<()> {
-    disable_raw_mode()?;
-
-    let mut stdout = io::stdout();
-    execute!(stdout, Show, LeaveAlternateScreen)?;
+    if next_bounds != *bounds {
+        *bounds = next_bounds;
+        state.resize_bounds(*bounds);
+    }
 
     Ok(())
 }
 
-fn install_panic_hook() {
-    let default_hook = panic::take_hook();
-
-    panic::set_hook(Box::new(move |panic_info| {
-        restore_terminal_after_panic();
-        default_hook(panic_info);
-    }));
-}
-
-fn restore_terminal_after_panic() {
-    let _ = disable_raw_mode();
+fn setup_terminal() -> io::Result<Terminal<CrosstermBackend<io::Stdout>>> {
+    enable_raw_mode()?;
 
     let mut stdout = io::stdout();
-    let _ = execute!(stdout, Show, LeaveAlternateScreen);
+    if let Err(error) = execute!(stdout, EnterAlternateScreen, Hide) {
+        let _ = disable_raw_mode();
+        return Err(error);
+    }
+
+    let backend = CrosstermBackend::new(stdout);
+    match Terminal::new(backend) {
+        Ok(terminal) => Ok(terminal),
+        Err(error) => {
+            let _ = cleanup_terminal_best_effort();
+            Err(error)
+        }
+    }
+}
+
+fn cleanup_terminal_best_effort() -> io::Result<()> {
+    let _ = disable_raw_mode();
+    let mut stdout = io::stdout();
+    execute!(stdout, Show, LeaveAlternateScreen)
+}
+
+struct TerminalGuard;
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = cleanup_terminal_best_effort();
+    }
 }
 
 fn tick_interval_for_speed(speed_level: u32) -> Duration {

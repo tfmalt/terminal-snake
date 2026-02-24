@@ -216,7 +216,7 @@ impl GameState {
                     other => other,
                 };
             }
-            GameInput::Quit | GameInput::Confirm | GameInput::CycleTheme => {}
+            GameInput::Quit | GameInput::Confirm | GameInput::CycleTheme | GameInput::Resize => {}
         }
     }
 

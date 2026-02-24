@@ -37,6 +37,7 @@ pub enum GameInput {
     Quit,
     Confirm,
     CycleTheme,
+    Resize,
 }
 
 /// Configuration flags for input source initialization.
@@ -143,11 +144,11 @@ impl InputHandler {
 }
 
 fn map_terminal_event(event: Event) -> Option<GameInput> {
-    let Event::Key(key_event) = event else {
-        return None;
-    };
-
-    map_key_event(key_event)
+    match event {
+        Event::Key(key_event) => map_key_event(key_event),
+        Event::Resize(_, _) => Some(GameInput::Resize),
+        _ => None,
+    }
 }
 
 fn map_key_event(key_event: KeyEvent) -> Option<GameInput> {
@@ -245,10 +246,13 @@ fn map_controller_axis(axis: Axis, value: f32) -> Option<GameInput> {
 
 #[cfg(test)]
 mod tests {
-    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use gilrs::{Axis, Button};
 
-    use super::{Direction, GameInput, map_controller_axis, map_controller_button, map_key_event};
+    use super::{
+        Direction, GameInput, map_controller_axis, map_controller_button, map_key_event,
+        map_terminal_event,
+    };
 
     #[test]
     fn opposite_direction_is_correct() {
@@ -293,6 +297,14 @@ mod tests {
         };
 
         assert_eq!(map_key_event(release), None);
+    }
+
+    #[test]
+    fn terminal_resize_event_maps_to_resize_input() {
+        assert_eq!(
+            map_terminal_event(Event::Resize(120, 40)),
+            Some(GameInput::Resize)
+        );
     }
 
     #[test]
