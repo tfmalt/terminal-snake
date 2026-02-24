@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - "**"
   pull_request:
 
 env:
@@ -38,6 +40,3 @@ jobs:
 
       - name: Test
         run: cargo test
-
-      - name: Build release
-        run: cargo build --release
