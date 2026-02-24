@@ -13,6 +13,8 @@ At the same time create the terminal "making time pass while compiling -> waitin
   ▀   ▀▀▀▀ ▀    ▀ ▀ ▀ ▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀    ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀
 ```
 
+![Terminal Snake gameplay screenshot](assets/screenshots/terminal-snake.png)
+
 ## Features
 
 - **Half-block rendering** — every game cell is two Unicode half-block
