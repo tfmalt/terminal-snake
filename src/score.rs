@@ -181,6 +181,18 @@ mod tests {
     }
 
     #[test]
+    fn write_creates_missing_parent_directories() {
+        let root = unique_test_root("creates_parent");
+        let nested = root.join("deep").join("nested").join("scores.json");
+        let file = ScoreFile::default();
+
+        write_score_file_to_path(&nested, &file).expect("save should create parent directories");
+        assert!(nested.exists(), "score file should exist after save");
+
+        cleanup_test_dir(&root);
+    }
+
+    #[test]
     fn legacy_score_file_is_loaded_when_new_path_missing() {
         let root = unique_test_root("legacy_fallback");
         let legacy = root.join("snake").join("scores.json");

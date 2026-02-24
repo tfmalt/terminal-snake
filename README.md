@@ -50,6 +50,17 @@ Press `Esc`/`←`/`Enter` to close the inline theme picker.
 - A font that renders Unicode block elements correctly (e.g. any Nerd Font,
   or any modern monospace font — no special glyphs beyond `▀`, `▄`, `█`).
 
+### Windows support
+
+- Native Windows is supported on `x86_64-pc-windows-msvc` in **PowerShell + Windows Terminal**.
+- Recommended fonts: **Cascadia Mono** or **Cascadia Code** for reliable `▀`, `▄`, `█` rendering.
+- Persistence path on Windows uses `LOCALAPPDATA`:
+  `%LOCALAPPDATA%\terminal-snake\scores.json`.
+- If your terminal/font renders block glyphs poorly, use `--ascii-glyphs` or set
+  `TERMINAL_SNAKE_GLYPHS=ascii`.
+- Known limitation: ASCII fallback keeps gameplay functional but loses the
+  half-block visual fidelity (coarser cell rendering).
+
 ## Building
 
 ```bash
@@ -75,8 +86,22 @@ Options:
       --height <HEIGHT>  Grid height in logical cells (defaults to terminal height)
       --no-controller    Disable controller input even when available
       --debug            Show diagnostic debug line at the bottom of the screen
+      --ascii-glyphs     Use an ASCII-safe glyph palette for poor font environments
   -h, --help             Print help
 ```
+
+## Windows smoke-test checklist
+
+Run this in PowerShell + Windows Terminal:
+
+1. Start game: `cargo run --release` (or built `.exe`) and verify HUD/menu render cleanly.
+2. Press `Ctrl+C`, `Q`, and menu `Quit` in separate runs; confirm shell returns with cursor visible.
+3. Resize Windows Terminal repeatedly while playing and while paused; confirm game keeps running and redraws correctly.
+4. Trigger startup failure with tiny window size; confirm terminal is restored after exit.
+5. Confirm glyphs (`▀`, `▄`, `█`, menu separators) look correct with Cascadia Mono/Code.
+6. Run once to create persistence, then verify `%LOCALAPPDATA%\terminal-snake\scores.json` exists.
+7. Corrupt `scores.json` manually and relaunch; confirm warning is shown and game still starts.
+8. Test fallback: run with `--ascii-glyphs`; confirm game remains playable with degraded visuals.
 
 ## Themes
 

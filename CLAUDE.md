@@ -121,7 +121,7 @@ degrades silently.
 Scores are saved to a platform-appropriate path:
 - Linux/WSL: `~/.local/share/terminal-snake/scores.json`
 - macOS: `~/Library/Application Support/terminal-snake/scores.json`
-- Windows: `%APPDATA%\terminal-snake\scores.json`
+- Windows: `%LOCALAPPDATA%\terminal-snake\scores.json`
 
 Use the `dirs` crate to resolve these paths at runtime.
 
