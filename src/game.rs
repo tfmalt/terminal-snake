@@ -3,7 +3,7 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::time::Duration;
 
-use crate::config::{GridSize, POINTS_PER_SPEED_LEVEL};
+use crate::config::{FOOD_PER_SPEED_LEVEL, GridSize};
 use crate::food::Food;
 use crate::input::GameInput;
 use crate::snake::{Position, Snake};
@@ -24,6 +24,57 @@ pub enum DeathReason {
     SelfCollision,
 }
 
+/// What triggered a glow effect on the snake.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum GlowTrigger {
+    SpeedLevelUp,
+    SuperFoodEaten,
+}
+
+/// A temporary visual pulse that fades over several game ticks.
+#[derive(Debug, Clone, Copy)]
+pub struct GlowEffect {
+    pub trigger: GlowTrigger,
+    pub ticks_remaining: u32,
+    pub total_ticks: u32,
+}
+
+impl GlowEffect {
+    /// Default glow duration in game ticks.
+    const DURATION: u32 = 10;
+
+    /// Creates a new glow effect that lasts [`Self::DURATION`] ticks.
+    #[must_use]
+    pub fn new(trigger: GlowTrigger) -> Self {
+        Self {
+            trigger,
+            ticks_remaining: Self::DURATION,
+            total_ticks: Self::DURATION,
+        }
+    }
+
+    /// Returns the current intensity as a value from 1.0 (fresh) to 0.0 (expired).
+    #[must_use]
+    pub fn intensity(&self) -> f32 {
+        if self.total_ticks == 0 {
+            return 0.0;
+        }
+        self.ticks_remaining as f32 / self.total_ticks as f32
+    }
+
+    /// Returns `true` while the effect has remaining ticks.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.ticks_remaining > 0
+    }
+
+    /// Decrements by one tick. Returns `true` if the effect is still active.
+    pub fn tick(&mut self) -> bool {
+        self.ticks_remaining = self.ticks_remaining.saturating_sub(1);
+        self.is_active()
+    }
+}
+
 /// Complete mutable game state for one session.
 #[derive(Debug, Clone)]
 pub struct GameState {
@@ -34,6 +85,7 @@ pub struct GameState {
     pub tick_count: u64,
     pub status: GameStatus,
     pub death_reason: Option<DeathReason>,
+    glow: Option<GlowEffect>,
     elapsed_millis: u64,
     bounds: GridSize,
     base_speed_level: u32,
@@ -116,6 +168,7 @@ impl GameState {
             tick_count: 0,
             status: GameStatus::Playing,
             death_reason: None,
+            glow: None,
             elapsed_millis: 0,
             bounds,
             base_speed_level,
@@ -134,6 +187,21 @@ impl GameState {
         }
 
         self.tick_count += 1;
+
+        // Decay active glow effect.
+        if let Some(ref mut glow) = self.glow
+            && !glow.tick()
+        {
+            self.glow = None;
+        }
+
+        // Tick super food timers and degrade expired ones to normal.
+        for food in &mut self.foods {
+            if food.is_super() && !food.tick() {
+                food.degrade();
+            }
+        }
+
         let next_head = self.snake.next_head_position();
 
         if !next_head.is_within_bounds(self.bounds) {
@@ -146,9 +214,9 @@ impl GameState {
             .foods
             .iter()
             .position(|food| next_head == food.position);
-        let ate_food = eaten_food_idx.is_some();
-        if ate_food {
-            self.snake.grow_next();
+        let eaten_growth = eaten_food_idx.map(|idx| self.foods[idx].growth());
+        if let Some(growth) = eaten_growth {
+            self.snake.grow_by(growth);
         }
 
         self.snake.move_forward(self.bounds);
@@ -159,12 +227,17 @@ impl GameState {
             return;
         }
 
-        if ate_food {
-            let eaten_food = self
-                .foods
-                .swap_remove(eaten_food_idx.expect("food index should exist when eaten"));
-            self.score += eaten_food.points();
+        if let Some(idx) = eaten_food_idx {
+            let eaten_food = self.foods.swap_remove(idx);
+            self.score += eaten_food.points() * self.speed_level;
+            let prev_speed_level = self.speed_level;
             self.update_speed_level();
+
+            if eaten_food.is_super() {
+                self.glow = Some(GlowEffect::new(GlowTrigger::SuperFoodEaten));
+            } else if self.speed_level > prev_speed_level {
+                self.glow = Some(GlowEffect::new(GlowTrigger::SpeedLevelUp));
+            }
 
             if self.snake.len() >= self.bounds.total_cells() {
                 self.status = GameStatus::Victory;
@@ -220,8 +293,24 @@ impl GameState {
         }
     }
 
+    /// Updates the base starting speed without touching RNG, food, or snake state.
+    ///
+    /// Use this when the player adjusts the speed selector on the start screen —
+    /// it keeps the backdrop (food positions, snake) stable across keypresses.
+    pub fn set_base_speed_level(&mut self, level: u32) {
+        self.base_speed_level = level.max(1);
+        self.speed_level = self.base_speed_level;
+    }
+
     fn update_speed_level(&mut self) {
-        self.speed_level = self.base_speed_level + (self.score / POINTS_PER_SPEED_LEVEL);
+        let food_eaten = self.snake.len().saturating_sub(2) as u32;
+        self.speed_level = self.base_speed_level + (food_eaten / FOOD_PER_SPEED_LEVEL);
+    }
+
+    /// Returns the currently active glow effect, if any.
+    #[must_use]
+    pub fn active_glow(&self) -> Option<&GlowEffect> {
+        self.glow.as_ref()
     }
 
     /// Returns immutable logical board bounds.
@@ -279,11 +368,21 @@ impl GameState {
         }
 
         while self.foods.len() < target_count {
-            let Some(food) =
+            let Some(mut food) =
                 spawn_food_avoiding(&mut self.rng, self.bounds, &self.snake, &self.foods)
             else {
                 break;
             };
+
+            // 30% chance to upgrade newly spawned food to super food
+            // (only after the game has started — initial food is always normal).
+            if self.tick_count > 0 && self.rng.gen_range(0..100) < 30 {
+                let head = self.snake.head();
+                let distance = (head.x - food.position.x).unsigned_abs()
+                    + (head.y - food.position.y).unsigned_abs();
+                food = Food::new_super(food.position, distance + 10);
+            }
+
             self.foods.push(food);
         }
     }
@@ -413,7 +512,8 @@ mod tests {
                 Position { x: 3, y: 2 },
             ],
             Direction::Left,
-        );
+        )
+        .expect("test snake segments should be valid");
 
         state.tick();
 
@@ -521,5 +621,23 @@ mod tests {
         state.tick();
         assert_eq!(state.status, GameStatus::Playing);
         assert_eq!(state.snake.head(), Position { x: 6, y: 9 });
+    }
+
+    #[test]
+    fn score_multiplied_by_speed_level() {
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 20,
+                height: 20,
+            },
+            42,
+        );
+        state.set_base_speed_level(3);
+        state.snake = Snake::new(Position { x: 5, y: 5 }, Direction::Right);
+        state.foods = vec![Food::new(Position { x: 6, y: 5 })];
+
+        state.tick();
+
+        assert_eq!(state.score, 3, "score should be 1 * speed_level(3)");
     }
 }

@@ -2,10 +2,6 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use gilrs::{Axis, Button, EventType, Gilrs};
-
-const STICK_DEADZONE: f32 = 0.5;
-const STICK_RELEASE_DEADZONE: f32 = 0.25;
 
 /// Canonical movement directions for snake input.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -40,58 +36,29 @@ pub enum GameInput {
     Resize,
 }
 
-/// Configuration flags for input source initialization.
-#[derive(Debug, Clone, Copy)]
-pub struct InputConfig {
-    pub enable_controller: bool,
-    pub is_wsl: bool,
-}
+/// Non-blocking keyboard input poller.
+pub struct InputHandler;
 
-impl Default for InputConfig {
+impl Default for InputHandler {
     fn default() -> Self {
-        Self {
-            enable_controller: true,
-            is_wsl: false,
-        }
+        Self::new()
     }
-}
-
-/// Non-blocking input poller for keyboard and controller sources.
-pub struct InputHandler {
-    gilrs: Option<Gilrs>,
-    controller_detected: bool,
-    last_stick_direction: Option<Direction>,
 }
 
 impl InputHandler {
     /// Builds a new input handler.
     #[must_use]
-    pub fn new(config: InputConfig) -> Self {
-        let gilrs = initialize_gilrs(config);
-        let controller_detected = gilrs.as_ref().is_some_and(controller_is_connected);
-
-        Self {
-            gilrs,
-            controller_detected,
-            last_stick_direction: None,
-        }
-    }
-
-    /// Returns whether at least one game controller is currently connected.
-    #[must_use]
-    pub fn controller_detected(&self) -> bool {
-        self.controller_detected
+    pub fn new() -> Self {
+        Self
     }
 
     /// Polls for one input event without blocking the game loop.
     ///
-    /// Keyboard is checked first. If a keyboard event is found it is returned
-    /// immediately and the controller is not checked for this cycle, giving
-    /// keyboard priority when both produce input simultaneously. Either source
-    /// can be used at any time without locking out the other.
+    /// Keyboard events are drained in a single batch so the latest direction
+    /// intent wins while quit/confirm actions still get through immediately.
     pub fn poll_input(&mut self) -> io::Result<Option<GameInput>> {
         let mut queued_direction: Option<GameInput> = None;
-        let mut queued_other: Option<GameInput> = None;
+        let mut queued_action: Option<GameInput> = None;
 
         while event::poll(Duration::from_millis(0))? {
             let terminal_event = event::read()?;
@@ -111,57 +78,26 @@ impl InputHandler {
                 continue;
             }
 
-            queued_other = Some(mapped);
+            queued_action = Some(mapped);
         }
 
-        if queued_direction.is_some() || queued_other.is_some() {
-            return Ok(queued_direction.or(queued_other));
-        }
-
-        if let Some(gilrs) = &mut self.gilrs {
-            self.controller_detected = controller_is_connected(gilrs);
-
-            while let Some(controller_event) = gilrs.next_event() {
-                match controller_event.event {
-                    EventType::ButtonPressed(button, _) => {
-                        if let Some(mapped_input) = map_controller_button(button) {
-                            return Ok(Some(mapped_input));
-                        }
-                    }
-                    EventType::AxisChanged(axis, value, _) => {
-                        if value.abs() < STICK_RELEASE_DEADZONE {
-                            self.last_stick_direction = None;
-                            continue;
-                        }
-
-                        let Some(GameInput::Direction(direction)) =
-                            map_controller_axis(axis, value)
-                        else {
-                            continue;
-                        };
-
-                        if self.last_stick_direction == Some(direction) {
-                            continue;
-                        }
-
-                        self.last_stick_direction = Some(direction);
-                        return Ok(Some(GameInput::Direction(direction)));
-                    }
-                    _ => {}
-                }
-            }
-
-            self.controller_detected = controller_is_connected(gilrs);
-        } else {
-            self.controller_detected = false;
+        if queued_direction.is_some() || queued_action.is_some() {
+            return Ok(select_buffered_input(queued_direction, queued_action));
         }
 
         Ok(None)
     }
 }
 
-fn controller_is_connected(gilrs: &Gilrs) -> bool {
-    gilrs.gamepads().any(|(_, gamepad)| gamepad.is_connected())
+fn select_buffered_input(
+    queued_direction: Option<GameInput>,
+    queued_action: Option<GameInput>,
+) -> Option<GameInput> {
+    // Priority policy for one drained batch:
+    // 1) Quit (handled eagerly in the loop above)
+    // 2) Non-direction actions (Pause/Confirm/CycleTheme/Resize)
+    // 3) Latest direction intent
+    queued_action.or(queued_direction)
 }
 
 fn map_terminal_event(event: Event) -> Option<GameInput> {
@@ -205,75 +141,11 @@ fn map_key_event(key_event: KeyEvent) -> Option<GameInput> {
     }
 }
 
-fn initialize_gilrs(config: InputConfig) -> Option<Gilrs> {
-    if !config.enable_controller || config.is_wsl {
-        return None;
-    }
-
-    let gilrs = match Gilrs::new() {
-        Ok(gilrs) => gilrs,
-        Err(error) => {
-            #[cfg(debug_assertions)]
-            eprintln!("Controller input disabled: {error}");
-            let _ = error;
-            return None;
-        }
-    };
-
-    #[cfg(debug_assertions)]
-    for (_, gamepad) in gilrs.gamepads() {
-        eprintln!("Detected gamepad: {}", gamepad.name());
-    }
-
-    Some(gilrs)
-}
-
-fn map_controller_button(button: Button) -> Option<GameInput> {
-    match button {
-        Button::DPadUp => Some(GameInput::Direction(Direction::Up)),
-        Button::DPadDown => Some(GameInput::Direction(Direction::Down)),
-        Button::DPadLeft => Some(GameInput::Direction(Direction::Left)),
-        Button::DPadRight => Some(GameInput::Direction(Direction::Right)),
-        Button::Start => Some(GameInput::Pause),
-        Button::Select | Button::Mode => Some(GameInput::Quit),
-        Button::South => Some(GameInput::Confirm),
-        _ => None,
-    }
-}
-
-fn map_controller_axis(axis: Axis, value: f32) -> Option<GameInput> {
-    if value.abs() < STICK_DEADZONE {
-        return None;
-    }
-
-    match axis {
-        Axis::LeftStickX => {
-            if value < 0.0 {
-                Some(GameInput::Direction(Direction::Left))
-            } else {
-                Some(GameInput::Direction(Direction::Right))
-            }
-        }
-        Axis::LeftStickY => {
-            if value < 0.0 {
-                Some(GameInput::Direction(Direction::Up))
-            } else {
-                Some(GameInput::Direction(Direction::Down))
-            }
-        }
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-    use gilrs::{Axis, Button};
 
-    use super::{
-        Direction, GameInput, map_controller_axis, map_controller_button, map_key_event,
-        map_terminal_event,
-    };
+    use super::{Direction, GameInput, map_key_event, map_terminal_event, select_buffered_input};
 
     #[test]
     fn opposite_direction_is_correct() {
@@ -329,33 +201,17 @@ mod tests {
     }
 
     #[test]
-    fn controller_button_mapping_supports_dpad_and_actions() {
-        assert_eq!(
-            map_controller_button(Button::DPadUp),
-            Some(GameInput::Direction(Direction::Up))
+    fn buffered_input_prioritizes_action_over_direction() {
+        let selected = select_buffered_input(
+            Some(GameInput::Direction(Direction::Left)),
+            Some(GameInput::Confirm),
         );
-        assert_eq!(
-            map_controller_button(Button::DPadRight),
-            Some(GameInput::Direction(Direction::Right))
-        );
-        assert_eq!(map_controller_button(Button::Start), Some(GameInput::Pause));
-        assert_eq!(map_controller_button(Button::Select), Some(GameInput::Quit));
-        assert_eq!(
-            map_controller_button(Button::South),
-            Some(GameInput::Confirm)
-        );
+        assert_eq!(selected, Some(GameInput::Confirm));
     }
 
     #[test]
-    fn controller_axis_mapping_respects_deadzone() {
-        assert_eq!(map_controller_axis(Axis::LeftStickX, 0.2), None);
-        assert_eq!(
-            map_controller_axis(Axis::LeftStickX, -0.8),
-            Some(GameInput::Direction(Direction::Left))
-        );
-        assert_eq!(
-            map_controller_axis(Axis::LeftStickY, 0.9),
-            Some(GameInput::Direction(Direction::Down))
-        );
+    fn buffered_input_uses_latest_direction_when_no_action_exists() {
+        let selected = select_buffered_input(Some(GameInput::Direction(Direction::Right)), None);
+        assert_eq!(selected, Some(GameInput::Direction(Direction::Right)));
     }
 }

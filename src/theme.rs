@@ -269,6 +269,8 @@ fn parse_theme_from_str_result(id: &str, raw: &str) -> Result<Theme, ThemeParseE
         snake_tail: resolve_token(&parsed, "snake_tail", true, &mut stack)
             .unwrap_or(fallback.snake_tail),
         food: resolve_token(&parsed, "food", true, &mut stack).unwrap_or(fallback.food),
+        super_food: resolve_token(&parsed, "super_food", true, &mut stack)
+            .unwrap_or(fallback.super_food),
         terminal_bg: resolve_token(&parsed, "terminal_bg", true, &mut stack)
             .unwrap_or(fallback.terminal_bg),
         field_bg: resolve_token(&parsed, "field_bg", true, &mut stack).unwrap_or(fallback.field_bg),
@@ -349,11 +351,15 @@ fn parse_color_string(
     prefer_dark: bool,
     stack: &mut Vec<String>,
 ) -> Option<Color> {
-    if value.eq_ignore_ascii_case("none") {
+    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("reset") {
         return Some(Color::Reset);
     }
 
     if let Some(color) = parse_hex_color(value) {
+        return Some(color);
+    }
+
+    if let Some(color) = parse_named_ansi_color(value) {
         return Some(color);
     }
 
@@ -367,6 +373,82 @@ fn parse_color_string(
     let resolved = resolve_value(file, referenced, prefer_dark, stack);
     let _ = stack.pop();
     resolved
+}
+
+fn parse_named_ansi_color(value: &str) -> Option<Color> {
+    match value {
+        value if value.eq_ignore_ascii_case("black") => Some(Color::Black),
+        value if value.eq_ignore_ascii_case("red") => Some(Color::Red),
+        value if value.eq_ignore_ascii_case("green") => Some(Color::Green),
+        value if value.eq_ignore_ascii_case("yellow") => Some(Color::Yellow),
+        value if value.eq_ignore_ascii_case("blue") => Some(Color::Blue),
+        value if value.eq_ignore_ascii_case("magenta") => Some(Color::Magenta),
+        value if value.eq_ignore_ascii_case("cyan") => Some(Color::Cyan),
+        value if value.eq_ignore_ascii_case("white") => Some(Color::White),
+        value if value.eq_ignore_ascii_case("gray") || value.eq_ignore_ascii_case("grey") => {
+            Some(Color::Gray)
+        }
+        value
+            if value.eq_ignore_ascii_case("darkgray")
+                || value.eq_ignore_ascii_case("darkgrey")
+                || value.eq_ignore_ascii_case("dark_gray")
+                || value.eq_ignore_ascii_case("dark_grey")
+                || value.eq_ignore_ascii_case("dark-gray")
+                || value.eq_ignore_ascii_case("dark-grey") =>
+        {
+            Some(Color::DarkGray)
+        }
+        value
+            if value.eq_ignore_ascii_case("lightred")
+                || value.eq_ignore_ascii_case("light_red")
+                || value.eq_ignore_ascii_case("light-red") =>
+        {
+            Some(Color::LightRed)
+        }
+        value
+            if value.eq_ignore_ascii_case("lightgreen")
+                || value.eq_ignore_ascii_case("light_green")
+                || value.eq_ignore_ascii_case("light-green") =>
+        {
+            Some(Color::LightGreen)
+        }
+        value
+            if value.eq_ignore_ascii_case("lightyellow")
+                || value.eq_ignore_ascii_case("light_yellow")
+                || value.eq_ignore_ascii_case("light-yellow") =>
+        {
+            Some(Color::LightYellow)
+        }
+        value
+            if value.eq_ignore_ascii_case("lightblue")
+                || value.eq_ignore_ascii_case("light_blue")
+                || value.eq_ignore_ascii_case("light-blue") =>
+        {
+            Some(Color::LightBlue)
+        }
+        value
+            if value.eq_ignore_ascii_case("lightmagenta")
+                || value.eq_ignore_ascii_case("light_magenta")
+                || value.eq_ignore_ascii_case("light-magenta") =>
+        {
+            Some(Color::LightMagenta)
+        }
+        value
+            if value.eq_ignore_ascii_case("lightcyan")
+                || value.eq_ignore_ascii_case("light_cyan")
+                || value.eq_ignore_ascii_case("light-cyan") =>
+        {
+            Some(Color::LightCyan)
+        }
+        value
+            if value.eq_ignore_ascii_case("lightwhite")
+                || value.eq_ignore_ascii_case("light_white")
+                || value.eq_ignore_ascii_case("light-white") =>
+        {
+            Some(Color::White)
+        }
+        _ => None,
+    }
 }
 
 fn parse_hex_color(value: &str) -> Option<Color> {
@@ -476,6 +558,59 @@ mod tests {
         let theme = parse_theme_from_str_result("system", json).expect("theme should parse");
         assert_eq!(theme.field_bg, Color::Reset);
         assert_eq!(theme.ui_bg, Color::Reset);
+    }
+
+    #[test]
+    fn reset_alias_maps_to_terminal_default() {
+        let json = r##"
+        {
+          "theme": {
+            "snake_head":  "#00CC00",
+            "snake_body":  "#00CC00",
+            "snake_tail":  "#00CC00",
+            "food":        "#FF0000",
+            "field_bg":    "reset",
+            "ui_bg":       "reset",
+            "ui_text":     "#00FF00",
+            "ui_accent":   "#00CC00",
+            "ui_muted":    "#777777"
+          }
+        }
+        "##;
+
+        let theme = parse_theme_from_str_result("system", json).expect("theme should parse");
+        assert_eq!(theme.field_bg, Color::Reset);
+        assert_eq!(theme.ui_bg, Color::Reset);
+    }
+
+    #[test]
+    fn named_ansi_colors_are_supported() {
+        let json = r##"
+        {
+          "theme": {
+            "snake_head":  "red",
+            "snake_body":  "light_green",
+            "snake_tail":  "dark-gray",
+            "food":        "yellow",
+            "field_bg":    "black",
+            "ui_bg":       "blue",
+            "ui_text":     "white",
+            "ui_accent":   "magenta",
+            "ui_muted":    "cyan"
+          }
+        }
+        "##;
+
+        let theme = parse_theme_from_str_result("named", json).expect("theme should parse");
+        assert_eq!(theme.snake_head, Color::Red);
+        assert_eq!(theme.snake_body, Color::LightGreen);
+        assert_eq!(theme.snake_tail, Color::DarkGray);
+        assert_eq!(theme.food, Color::Yellow);
+        assert_eq!(theme.field_bg, Color::Black);
+        assert_eq!(theme.ui_bg, Color::Blue);
+        assert_eq!(theme.ui_text, Color::White);
+        assert_eq!(theme.ui_accent, Color::Magenta);
+        assert_eq!(theme.ui_muted, Color::Cyan);
     }
 
     #[test]

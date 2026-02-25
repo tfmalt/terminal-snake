@@ -38,6 +38,8 @@ pub struct Theme {
     pub snake_tail: Color,
     /// Solid block color for food items.
     pub food: Color,
+    /// Solid block color for super food items.
+    pub super_food: Color,
     /// Background color painted across the entire terminal before all other layers.
     /// Set to `Color::Reset` to use the terminal's own default background.
     pub terminal_bg: Color,
@@ -64,6 +66,7 @@ pub fn fallback_theme() -> Theme {
         snake_body: Color::Blue,
         snake_tail: Color::DarkGray,
         food: Color::Red,
+        super_food: Color::Yellow,
         terminal_bg: Color::Reset,
         field_bg: Color::Black,
         ui_bg: Color::DarkGray,
@@ -88,6 +91,15 @@ pub const GLYPH_HALF_UPPER: &str = "▀";
 
 /// Lower half-block glyph for compositing.
 pub const GLYPH_HALF_LOWER: &str = "▄";
+
+/// Up indicator used in start menu speed controls.
+pub const GLYPH_INDICATOR_UP: &str = "▲";
+
+/// Down indicator used in start menu speed controls.
+pub const GLYPH_INDICATOR_DOWN: &str = "▼";
+
+/// Filled square marker used in HUD counters.
+pub const GLYPH_MARKER_SQUARE: &str = "■";
 
 /// Runtime-selected glyph mode.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -163,8 +175,14 @@ pub const DEFAULT_TICK_INTERVAL_MS: u64 = 200;
 /// Minimum tick interval in milliseconds.
 pub const MIN_TICK_INTERVAL_MS: u64 = 60;
 
-/// Score needed per speed level increase.
-pub const POINTS_PER_SPEED_LEVEL: u32 = 5;
+/// Food items eaten per speed level increase.
+pub const FOOD_PER_SPEED_LEVEL: u32 = 5;
+
+/// Minimum selectable starting speed level.
+pub const MIN_START_SPEED_LEVEL: u32 = 1;
+
+/// Maximum selectable starting speed level.
+pub const MAX_START_SPEED_LEVEL: u32 = 15;
 
 #[cfg(test)]
 mod tests {

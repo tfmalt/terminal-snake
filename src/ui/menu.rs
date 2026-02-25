@@ -6,7 +6,10 @@ use ratatui::widgets::{Clear, Paragraph};
 use std::time::Duration;
 
 use crate::block_font::{FONT_HEIGHT, render_text, text_width};
-use crate::config::{Theme, glyphs};
+use crate::config::{
+    GLYPH_INDICATOR_DOWN, GLYPH_INDICATOR_UP, MAX_START_SPEED_LEVEL, MIN_START_SPEED_LEVEL, Theme,
+    glyphs,
+};
 use crate::game::DeathReason;
 use crate::theme::ThemeItem;
 
@@ -16,22 +19,38 @@ pub struct ThemeSelectView<'a> {
 }
 
 /// Draws the start screen as a centered popup.
+#[allow(clippy::too_many_arguments)]
 pub fn render_start_menu(
     frame: &mut Frame<'_>,
     area: Rect,
     _high_score: u32,
-    controller_detected: bool,
     theme: &Theme,
     selected_idx: usize,
+    start_speed_level: u32,
+    speed_adjust_mode: bool,
     theme_select: Option<ThemeSelectView<'_>>,
 ) {
     // If "terminal snake" (block font) + 2-column margin each side doesn't fit,
     // fall back to plain text "TERMINAL" above block-font "SNAKE".
     let full_title_width = text_width("terminal") + 3 + text_width("snake");
+    let theme_editing = theme_select.is_some();
     let body = vec![
         menu_option_line("Start", selected_idx == 0, theme),
-        menu_option_line(format!("Theme:  {}", theme.name), selected_idx == 1, theme),
-        menu_option_line("Quit", selected_idx == 2, theme),
+        menu_option_value_line(
+            "Speed",
+            start_speed_level.to_string(),
+            selected_idx == 1,
+            speed_adjust_mode,
+            theme,
+        ),
+        menu_option_value_line(
+            "Theme",
+            theme.name.to_string(),
+            selected_idx == 2,
+            theme_editing,
+            theme,
+        ),
+        menu_option_line("Quit", selected_idx == 3, theme),
     ];
     let menu_height = u16::try_from(body.len()).unwrap_or(u16::MAX);
 
@@ -56,25 +75,12 @@ pub fn render_start_menu(
     frame.render_widget(Clear, popup);
     render_menu_panel(frame, popup, theme);
 
-    let [
-        _,
-        title_row,
-        _,
-        body_row,
-        _,
-        controller_row,
-        hint_row,
-        copyright_row,
-        _,
-        _,
-    ] = Layout::vertical([
+    let [_, title_row, _, body_row, _, hint_row, copyright_row, _] = Layout::vertical([
         Constraint::Length(MENU_MARGIN_ROWS),
         Constraint::Length(title_row_height),
         Constraint::Length(logo_to_menu_gap),
         Constraint::Length(menu_height),
         Constraint::Length(MENU_MARGIN_ROWS),
-        Constraint::Length(1),
-        Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -198,7 +204,7 @@ pub fn render_start_menu(
         }
     }
 
-    let menu_width = start_menu_content_width(theme).saturating_add(2);
+    let menu_width = start_menu_content_width(theme, start_speed_level).saturating_add(2);
     let menu_area = centered_rect_with_max_width(body_row, menu_width);
     frame.render_widget(
         Paragraph::new(body)
@@ -207,23 +213,50 @@ pub fn render_start_menu(
         menu_area,
     );
 
-    if controller_detected {
-        frame.render_widget(
-            Paragraph::new(Line::from("Controller Detected"))
-                .alignment(Alignment::Center)
-                .style(Style::default().fg(theme.ui_accent).bg(theme.ui_bg)),
-            controller_row,
-        );
+    // Overlay configured up/down indicator glyphs around speed value.
+    // Written directly to the buffer after the paragraph so they sit on top of
+    // whatever character was already rendered there. Because ratatui redraws the
+    // entire frame every tick the source data is never mutated — the overlay is
+    // ephemeral and non-destructive.
+    if speed_adjust_mode {
+        // "> Speed:  " = 2 (prefix) + 5 (label) + 3 (":  ") = 10 chars before value.
+        let value_x = menu_area.x.saturating_add(10);
+        // Speed is body line index 1, so its terminal row is menu_area.y + 1.
+        let speed_y = menu_area.y.saturating_add(1);
+        let indicator_style = Style::default()
+            .fg(theme.ui_accent)
+            .bg(theme.ui_bg)
+            .add_modifier(Modifier::BOLD);
+        let buf = frame.buffer_mut();
+        if value_x < menu_area.right() {
+            if start_speed_level < MAX_START_SPEED_LEVEL {
+                buf.set_string(
+                    value_x,
+                    speed_y.saturating_sub(1),
+                    GLYPH_INDICATOR_UP,
+                    indicator_style,
+                );
+            }
+            if start_speed_level > MIN_START_SPEED_LEVEL {
+                buf.set_string(
+                    value_x,
+                    speed_y.saturating_add(1),
+                    GLYPH_INDICATOR_DOWN,
+                    indicator_style,
+                );
+            }
+        }
     }
 
-    let movement_hint = if controller_detected {
-        "Use arrows/WASD or D-pad/stick to move"
+    let hint_text = if speed_adjust_mode {
+        "↑↓ adjusts speed   Enter/Esc to confirm"
+    } else if theme_editing {
+        "↑↓ cycles theme   Enter/Esc to confirm"
     } else {
-        "Use arrows/WASD to move"
+        "↑↓ navigate   Enter/→ select"
     };
-
     frame.render_widget(
-        Paragraph::new(Line::from(movement_hint))
+        Paragraph::new(Line::from(hint_text))
             .alignment(Alignment::Center)
             .style(Style::default().fg(theme.ui_muted).bg(theme.ui_bg)),
         hint_row,
@@ -302,9 +335,9 @@ pub fn render_game_over_menu(
     area: Rect,
     score: u32,
     high_score: u32,
+    snake_length: usize,
     death_reason: Option<DeathReason>,
     game_length: Duration,
-    controller_detected: bool,
     theme: &Theme,
     selected_idx: usize,
 ) {
@@ -324,14 +357,16 @@ pub fn render_game_over_menu(
         .collect::<Vec<_>>();
 
     let shown_high_score = if is_new_high { score } else { high_score };
+    let food_eaten = snake_length.saturating_sub(2);
     let seconds = game_length.as_secs_f64();
     let foods_per_minute = if seconds > 0.0 {
-        (f64::from(score) / seconds) * 60.0
+        (food_eaten as f64 / seconds) * 60.0
     } else {
         0.0
     };
 
     let score_str = score.to_string();
+    let length_str = snake_length.to_string();
     let high_score_str = shown_high_score.to_string();
     let cause_str = match death_reason {
         Some(DeathReason::WallCollision) => "hit wall",
@@ -344,6 +379,7 @@ pub fn render_game_over_menu(
     let value_col_width = [
         "Value",
         &score_str,
+        &length_str,
         &high_score_str,
         cause_str,
         &game_length_str,
@@ -357,6 +393,7 @@ pub fn render_game_over_menu(
     let mut body = vec![
         table_header_row("Metric", "Value", value_col_width, theme),
         table_row("Score", &score_str, value_col_width, theme),
+        table_row("Length", &length_str, value_col_width, theme),
         table_row("High score", &high_score_str, value_col_width, theme),
         table_row("Cause", cause_str, value_col_width, theme),
         table_row("Game length", &game_length_str, value_col_width, theme),
@@ -378,21 +415,12 @@ pub fn render_game_over_menu(
     frame.render_widget(Clear, popup);
     render_menu_panel(frame, popup, theme);
 
-    let [
-        _,
-        title_row,
-        _,
-        body_row,
-        _,
-        footer_controller_row,
-        footer_hint_row,
-    ] = Layout::vertical([
+    let [_, title_row, _, body_row, _, footer_hint_row] = Layout::vertical([
         Constraint::Length(MENU_MARGIN_ROWS),
         Constraint::Length(title_height),
         Constraint::Length(MENU_MARGIN_ROWS),
         Constraint::Length(menu_height),
         Constraint::Length(MENU_MARGIN_ROWS),
-        Constraint::Length(1),
         Constraint::Length(1),
     ])
     .areas(popup);
@@ -414,23 +442,8 @@ pub fn render_game_over_menu(
         centered_body,
     );
 
-    if controller_detected {
-        frame.render_widget(
-            Paragraph::new(Line::from("Controller Detected"))
-                .alignment(Alignment::Center)
-                .style(Style::default().fg(theme.ui_accent).bg(theme.ui_bg)),
-            footer_controller_row,
-        );
-    }
-
-    let movement_hint = if controller_detected {
-        "Use arrows/WASD or D-pad/stick to move"
-    } else {
-        "Use arrows/WASD to move"
-    };
-
     frame.render_widget(
-        Paragraph::new(Line::from(movement_hint))
+        Paragraph::new(Line::from("Use arrows/WASD to move"))
             .alignment(Alignment::Center)
             .style(Style::default().fg(theme.ui_muted).bg(theme.ui_bg)),
         footer_hint_row,
@@ -648,6 +661,43 @@ fn menu_option_line<T: Into<String>>(label: T, selected: bool, theme: &Theme) ->
     }
 }
 
+/// Renders a menu row that has a label and an editable value (e.g. "Speed: 5").
+///
+/// When `editing` is true the value is rendered with inverted colours to show
+/// it is the thing being actively changed, giving a clear visual distinction
+/// between "cursor on this row" and "editing this value".
+fn menu_option_value_line(
+    label: &str,
+    value: String,
+    selected: bool,
+    editing: bool,
+    theme: &Theme,
+) -> Line<'static> {
+    let prefix = if selected { "> " } else { "  " };
+    if editing {
+        // Highlight only the value to signal "you are editing this".
+        let label_style = Style::default()
+            .fg(theme.ui_accent)
+            .add_modifier(Modifier::BOLD);
+        let value_style = Style::default()
+            .fg(theme.ui_bg)
+            .bg(theme.ui_accent)
+            .add_modifier(Modifier::BOLD);
+        Line::from(vec![
+            Span::styled(format!("{prefix}{label}:  "), label_style),
+            Span::styled(value, value_style),
+        ])
+    } else if selected {
+        Line::from(format!("{prefix}{label}:  {value}")).style(
+            Style::default()
+                .fg(theme.ui_accent)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Line::from(format!("{prefix}{label}:  {value}"))
+    }
+}
+
 fn start_screen_title_lines(theme: &Theme) -> Vec<Line<'static>> {
     let terminal_rows = render_text("terminal");
     let snake_rows = render_text("snake");
@@ -691,9 +741,10 @@ fn snake_only_title_lines(theme: &Theme) -> Vec<Line<'static>> {
         .collect()
 }
 
-fn start_menu_content_width(theme: &Theme) -> u16 {
+fn start_menu_content_width(theme: &Theme, start_speed_level: u32) -> u16 {
     let labels = [
         "Start".to_string(),
+        format!("Speed:  {start_speed_level}"),
         format!("Theme:  {}", theme.name),
         "Quit".to_string(),
     ];

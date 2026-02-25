@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+use thiserror::Error;
+
 use crate::config::GridSize;
 use crate::input::Direction;
 
@@ -46,7 +48,15 @@ pub struct Snake {
     direction: Direction,
     buffered_direction: Direction,
     next_buffered_direction: Option<Direction>,
-    grow: bool,
+    grow_remaining: u32,
+}
+
+/// Construction errors for [`Snake`].
+#[derive(Debug, Error, Clone, Copy, Eq, PartialEq)]
+pub enum SnakeBuildError {
+    /// `from_segments` requires at least one body segment.
+    #[error("snake must contain at least one segment")]
+    EmptySegments,
 }
 
 impl Snake {
@@ -62,25 +72,38 @@ impl Snake {
             direction,
             buffered_direction: direction,
             next_buffered_direction: None,
-            grow: false,
+            grow_remaining: 0,
         }
     }
 
     /// Creates a snake from explicit body segments (front is head).
-    #[must_use]
-    pub fn from_segments(segments: Vec<Position>, direction: Direction) -> Self {
-        Self {
+    ///
+    /// Returns an error when `segments` is empty.
+    pub fn from_segments(
+        segments: Vec<Position>,
+        direction: Direction,
+    ) -> Result<Self, SnakeBuildError> {
+        if segments.is_empty() {
+            return Err(SnakeBuildError::EmptySegments);
+        }
+
+        Ok(Self {
             body: VecDeque::from(segments),
             direction,
             buffered_direction: direction,
             next_buffered_direction: None,
-            grow: false,
-        }
+            grow_remaining: 0,
+        })
     }
 
-    /// Queues growth on the next movement tick.
+    /// Queues growth of one segment on the next movement tick.
     pub fn grow_next(&mut self) {
-        self.grow = true;
+        self.grow_remaining += 1;
+    }
+
+    /// Queues growth of `n` segments over subsequent movement ticks.
+    pub fn grow_by(&mut self, n: u32) {
+        self.grow_remaining += n;
     }
 
     /// Applies one buffered movement step.
@@ -95,10 +118,11 @@ impl Snake {
         }
 
         self.body.push_front(next_head);
-        if !self.grow {
+        if self.grow_remaining > 0 {
+            self.grow_remaining -= 1;
+        } else {
             let _ = self.body.pop_back();
         }
-        self.grow = false;
     }
 
     /// Returns the head position for the next movement tick.
@@ -227,7 +251,7 @@ mod tests {
     use crate::config::GridSize;
     use crate::input::Direction;
 
-    use super::{Position, Snake};
+    use super::{Position, Snake, SnakeBuildError};
 
     #[test]
     fn position_wrapping_keeps_coordinates_inside_bounds() {
@@ -357,5 +381,11 @@ mod tests {
         snake.buffer_direction(Direction::Left);
 
         assert!(snake.next_buffered_direction.is_none());
+    }
+
+    #[test]
+    fn from_segments_rejects_empty_segments() {
+        let result = Snake::from_segments(Vec::new(), Direction::Right);
+        assert!(matches!(result, Err(SnakeBuildError::EmptySegments)));
     }
 }

@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use crate::config::{HUD_BOTTOM_MARGIN_Y, PLAY_AREA_MARGIN_X, Theme, glyphs};
+use crate::config::{GLYPH_MARKER_SQUARE, HUD_BOTTOM_MARGIN_Y, PLAY_AREA_MARGIN_X, Theme, glyphs};
 use crate::game::{GameState, GameStatus};
 use crate::platform::Platform;
 
@@ -15,7 +15,6 @@ const HUD_INNER_MARGIN_X: u16 = 1;
 pub struct HudInfo<'a> {
     pub high_score: u32,
     pub game_over_reference_high_score: u32,
-    pub controller_detected: bool,
     pub theme: &'a Theme,
     /// Whether the debug row is enabled (`--debug` flag).
     pub debug: bool,
@@ -64,11 +63,12 @@ pub fn render_hud(
     frame.render_widget(Paragraph::new("").style(hud_bg), score_band);
     frame.render_widget(Paragraph::new("").style(hud_bg), status_band);
 
-    // Score line: Score | Speed | Hi + flags
-    let [left, center, right] = Layout::horizontal([
-        Constraint::Percentage(33),
-        Constraint::Percentage(34),
-        Constraint::Percentage(33),
+    // Score line: Score | Length | Speed | Hi
+    let [col1, col2, col3, col4] = Layout::horizontal([
+        Constraint::Percentage(25),
+        Constraint::Percentage(25),
+        Constraint::Percentage(25),
+        Constraint::Percentage(25),
     ])
     .areas(score_area);
 
@@ -76,28 +76,25 @@ pub fn render_hud(
         Paragraph::new(Line::from(format!("Score: {}", state.score)))
             .alignment(Alignment::Left)
             .style(left_style(info.theme)),
-        left,
+        col1,
+    );
+
+    frame.render_widget(
+        Paragraph::new(Line::from(format!("Length: {}", state.snake.len())))
+            .alignment(Alignment::Center),
+        col2,
     );
 
     frame.render_widget(
         Paragraph::new(Line::from(format!("Speed: {}", state.speed_level)))
             .alignment(Alignment::Center),
-        center,
+        col3,
     );
 
-    let right_text = format!(
-        "Hi: {} {}{}",
-        info.high_score,
-        if info.controller_detected {
-            "[PAD]"
-        } else {
-            "[NOPAD]"
-        },
-        if platform.is_wsl() { " [WSL]" } else { "" }
-    );
+    let right_text = format!("Hi: {}", info.high_score);
     frame.render_widget(
         Paragraph::new(Line::from(right_text)).alignment(Alignment::Right),
-        right,
+        col4,
     );
 
     // Status line: game state label
@@ -212,9 +209,17 @@ fn left_style(theme: &Theme) -> Style {
 fn bottom_info_line<'a>(dimensions: &'a str, food_count: &'a str, food_color: Color) -> Line<'a> {
     Line::from(vec![
         Span::raw(format!("{dimensions}  ")),
-        Span::styled(glyphs().solid, Style::default().fg(food_color)),
+        Span::styled(food_count_marker(), Style::default().fg(food_color)),
         Span::raw(format!(" = {food_count}")),
     ])
+}
+
+fn food_count_marker() -> &'static str {
+    if glyphs().solid == "#" {
+        "#"
+    } else {
+        GLYPH_MARKER_SQUARE
+    }
 }
 
 fn bottom_info_width(dimensions: &str, food_count: &str) -> usize {

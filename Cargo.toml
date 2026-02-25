@@ -1,6 +1,6 @@
 [package]
 name = "terminal-snake"
-version = "0.6.26"
+version = "0.9.1"
 edition = "2024"
 description = "Retro cross-platform terminal Snake game in Rust"
 license = "MIT"
@@ -27,7 +27,6 @@ required-features = ["fontest"]
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"
 dirs = "5"
-gilrs = "0.11"
 rand = "0.8"
 ratatui = "0.29"
 serde = { version = "1", features = ["derive"] }

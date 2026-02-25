@@ -4,7 +4,7 @@ use ratatui::style::Style;
 use ratatui::widgets::Block;
 
 use crate::config::{GridSize, PLAY_AREA_MARGIN_X, PLAY_AREA_MARGIN_Y, Theme, glyphs};
-use crate::game::{GameState, GameStatus};
+use crate::game::{GameState, GameStatus, GlowEffect, GlowTrigger};
 use crate::platform::Platform;
 use crate::ui::hud::{HudInfo, render_hud};
 use crate::ui::menu::{
@@ -13,6 +13,9 @@ use crate::ui::menu::{
 
 pub struct MenuUiState<'a> {
     pub start_selected_idx: usize,
+    pub start_speed_level: u32,
+    /// Whether the speed-adjust sub-mode is active (Up/Down changes speed value).
+    pub start_speed_adjust_mode: bool,
     pub pause_selected_idx: usize,
     pub game_over_selected_idx: usize,
     pub start_theme_select: Option<ThemeSelectView<'a>>,
@@ -23,9 +26,12 @@ pub struct MenuUiState<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CellKind {
     Empty,
-    /// Carries the segment index (0 = head) for color banding.
-    Snake(usize),
+    SnakeHead,
+    /// Carries body segment index (excluding head/tail) for color banding.
+    SnakeBody(usize),
+    SnakeTail,
     Food,
+    SuperFood,
 }
 
 /// Renders the full game frame from immutable state.
@@ -60,9 +66,10 @@ pub fn render(
             frame,
             play_area,
             hud_info.high_score,
-            hud_info.controller_detected,
             hud_info.theme,
             menu_ui.start_selected_idx,
+            menu_ui.start_speed_level,
+            menu_ui.start_speed_adjust_mode,
             menu_ui.start_theme_select,
         );
         return;
@@ -81,9 +88,9 @@ pub fn render(
             play_area,
             state.score,
             hud_info.game_over_reference_high_score,
+            state.snake.len(),
             state.death_reason,
             state.elapsed_duration(),
-            hud_info.controller_detected,
             hud_info.theme,
             menu_ui.game_over_selected_idx,
         ),
@@ -92,9 +99,9 @@ pub fn render(
             play_area,
             state.score,
             hud_info.game_over_reference_high_score,
+            state.snake.len(),
             state.death_reason,
             state.elapsed_duration(),
-            hud_info.controller_detected,
             hud_info.theme,
             menu_ui.game_over_selected_idx,
         ),
@@ -138,6 +145,7 @@ fn render_play_area_hud_margin(
 fn render_play_area(frame: &mut Frame<'_>, inner: Rect, state: &GameState, theme: &Theme) {
     let bounds = state.bounds();
     let grid = build_cell_grid(state, bounds);
+    let glow = state.active_glow();
 
     let buffer = frame.buffer_mut();
     let game_h = usize::from(bounds.height);
@@ -165,7 +173,7 @@ fn render_play_area(frame: &mut Frame<'_>, inner: Rect, state: &GameState, theme
                 CellKind::Empty
             };
 
-            let (glyph, fg, bg) = composite_half_block(top_kind, bot_kind, theme);
+            let (glyph, fg, bg) = composite_half_block(top_kind, bot_kind, theme, glow);
             buffer.set_string(x, y, glyph, Style::new().fg(fg).bg(bg));
         }
     }
@@ -181,16 +189,29 @@ fn build_cell_grid(state: &GameState, bounds: GridSize) -> Vec<CellKind> {
     for food in &state.foods {
         let fp = food.position;
         if fp.is_within_bounds(bounds) {
-            grid[fp.y as usize * w + fp.x as usize] = CellKind::Food;
+            let kind = if food.is_super() {
+                CellKind::SuperFood
+            } else {
+                CellKind::Food
+            };
+            grid[fp.y as usize * w + fp.x as usize] = kind;
         }
     }
 
     // Snake segments — index 0 is the head.
+    let snake_len = state.snake.len();
     for (idx, seg) in state.snake.segments().enumerate() {
         if !seg.is_within_bounds(bounds) {
             continue;
         }
-        grid[seg.y as usize * w + seg.x as usize] = CellKind::Snake(idx);
+        let kind = if idx == 0 {
+            CellKind::SnakeHead
+        } else if idx + 1 == snake_len {
+            CellKind::SnakeTail
+        } else {
+            CellKind::SnakeBody(idx - 1)
+        };
+        grid[seg.y as usize * w + seg.x as usize] = kind;
     }
 
     grid
@@ -201,47 +222,94 @@ fn composite_half_block(
     top: CellKind,
     bot: CellKind,
     theme: &Theme,
+    glow: Option<&GlowEffect>,
 ) -> (&'static str, ratatui::style::Color, ratatui::style::Color) {
     let bg = theme.field_bg;
     let palette = glyphs();
 
     match (top, bot) {
         (CellKind::Empty, CellKind::Empty) => (" ", bg, bg),
-        (top_kind, CellKind::Empty) => {
-            // Upper half-block: fg = top color, bg = empty
-            (palette.half_upper, cell_color(top_kind, theme), bg)
-        }
-        (CellKind::Empty, bot_kind) => {
-            // Lower half-block: fg = bottom color, bg = empty
-            (palette.half_lower, cell_color(bot_kind, theme), bg)
-        }
-        (top_kind, bot_kind) => {
-            // Upper half-block: fg = top color, bg = bottom color
-            (
-                palette.half_upper,
-                cell_color(top_kind, theme),
-                cell_color(bot_kind, theme),
-            )
-        }
+        (top_kind, CellKind::Empty) => (palette.half_upper, cell_color(top_kind, theme, glow), bg),
+        (CellKind::Empty, bot_kind) => (palette.half_lower, cell_color(bot_kind, theme, glow), bg),
+        (top_kind, bot_kind) => (
+            palette.half_upper,
+            cell_color(top_kind, theme, glow),
+            cell_color(bot_kind, theme, glow),
+        ),
     }
 }
 
-/// Maps a non-empty `CellKind` to its theme color.
+/// Maps a non-empty `CellKind` to its theme color, with optional glow blending.
 ///
 /// Snake body uses alternating 3-segment bands: even bands use the base
 /// `snake_body` color; odd bands have the red channel boosted by 10%.
-fn cell_color(kind: CellKind, theme: &Theme) -> ratatui::style::Color {
+/// When a glow effect is active, snake cells are blended toward the glow color.
+fn cell_color(kind: CellKind, theme: &Theme, glow: Option<&GlowEffect>) -> ratatui::style::Color {
     match kind {
-        CellKind::Snake(idx) => {
+        CellKind::SnakeHead => {
+            let base = theme.snake_head;
+            if let Some(effect) = glow {
+                let glow_color = glow_target_color(effect.trigger);
+                lerp_color(base, glow_color, effect.intensity())
+            } else {
+                base
+            }
+        }
+        CellKind::SnakeBody(idx) => {
             let band = idx / 3;
-            if band % 2 == 0 {
+            let base = if band % 2 == 0 {
                 theme.snake_body
             } else {
                 redden_color(theme.snake_body, 0.8)
+            };
+            if let Some(effect) = glow {
+                let glow_color = glow_target_color(effect.trigger);
+                lerp_color(base, glow_color, effect.intensity())
+            } else {
+                base
+            }
+        }
+        CellKind::SnakeTail => {
+            let base = theme.snake_tail;
+            if let Some(effect) = glow {
+                let glow_color = glow_target_color(effect.trigger);
+                lerp_color(base, glow_color, effect.intensity())
+            } else {
+                base
             }
         }
         CellKind::Food => theme.food,
+        CellKind::SuperFood => theme.super_food,
         CellKind::Empty => theme.field_bg,
+    }
+}
+
+/// Returns the glow target color for a given trigger type.
+fn glow_target_color(trigger: GlowTrigger) -> ratatui::style::Color {
+    use ratatui::style::Color;
+    match trigger {
+        GlowTrigger::SpeedLevelUp => Color::Rgb(200, 255, 255),
+        GlowTrigger::SuperFoodEaten => Color::Rgb(255, 215, 0),
+    }
+}
+
+/// Linearly interpolates between two `Rgb` colors at factor `t` (0.0–1.0).
+/// Returns `from` unchanged when either color is a named (non-RGB) color.
+fn lerp_color(
+    from: ratatui::style::Color,
+    to: ratatui::style::Color,
+    t: f32,
+) -> ratatui::style::Color {
+    use ratatui::style::Color;
+    match (from, to) {
+        (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
+            let t = t.clamp(0.0, 1.0);
+            let lerp = |a: u8, b: u8| -> u8 {
+                (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8
+            };
+            Color::Rgb(lerp(r1, r2), lerp(g1, g2), lerp(b1, b2))
+        }
+        _ => from,
     }
 }
 

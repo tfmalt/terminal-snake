@@ -3,25 +3,20 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use crossterm::cursor::{Hide, Show};
-use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
-use ratatui::Terminal;
-use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Size;
 use terminal_snake::config::{
-    DEFAULT_TICK_INTERVAL_MS, GlyphMode, GridSize, HUD_BOTTOM_MARGIN_Y, MIN_TICK_INTERVAL_MS,
-    PLAY_AREA_MARGIN_X, PLAY_AREA_MARGIN_Y, configure_glyphs,
+    DEFAULT_TICK_INTERVAL_MS, GlyphMode, GridSize, HUD_BOTTOM_MARGIN_Y, MAX_START_SPEED_LEVEL,
+    MIN_START_SPEED_LEVEL, MIN_TICK_INTERVAL_MS, PLAY_AREA_MARGIN_X, PLAY_AREA_MARGIN_Y,
+    configure_glyphs,
 };
 use terminal_snake::game::{GameState, GameStatus};
-use terminal_snake::input::{Direction, GameInput, InputConfig, InputHandler};
+use terminal_snake::input::{Direction, GameInput, InputHandler};
 use terminal_snake::platform::Platform;
 use terminal_snake::renderer::{self, MenuUiState};
 use terminal_snake::score::{
     load_high_score, load_theme_selection, save_high_score, save_theme_selection,
 };
+use terminal_snake::terminal_runtime::{AppTerminal, TerminalSession};
 use terminal_snake::theme::ThemeCatalog;
 use terminal_snake::ui::hud::HudInfo;
 use terminal_snake::ui::menu::ThemeSelectView;
@@ -32,23 +27,21 @@ enum ThemeSelectionMode {
     PauseMenu,
 }
 
+const START_MENU_ITEM_COUNT: usize = 4;
+const START_MENU_START_IDX: usize = 0;
+const START_MENU_SPEED_IDX: usize = 1;
+const START_MENU_THEME_IDX: usize = 2;
+const START_MENU_QUIT_IDX: usize = 3;
+
 #[derive(Debug, Parser)]
 struct Cli {
     /// Starting speed level.
     #[arg(long, default_value_t = 1)]
     speed: u32,
 
-    /// Grid width in logical cells (defaults to terminal width).
-    #[arg(long)]
-    width: Option<u16>,
-
-    /// Grid height in logical cells (defaults to terminal height).
-    #[arg(long)]
-    height: Option<u16>,
-
-    /// Disable controller input even when available.
-    #[arg(long = "no-controller")]
-    no_controller: bool,
+    /// Deprecated compatibility flag; controller support has been removed.
+    #[arg(long = "no-controller", hide = true)]
+    _no_controller: bool,
 
     /// Show diagnostic debug line at the bottom of the screen.
     #[arg(long)]
@@ -81,18 +74,16 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
         eprintln!("Warning: saved theme '{saved_theme}' is unavailable; using default.");
     }
 
-    let mut terminal = setup_terminal()?;
-    let _terminal_guard = TerminalGuard;
+    let mut terminal_session = TerminalSession::enter()?;
+    let terminal = terminal_session.terminal_mut();
 
     // Derive grid bounds from ratatui's own size so the logical grid
     // matches the exact frame area the renderer will use.
     let frame_area = terminal.size()?;
-    let mut bounds = grid_bounds_from_frame(frame_area, &cli)?;
-    let mut input = InputHandler::new(InputConfig {
-        enable_controller: !cli.no_controller,
-        is_wsl: platform.is_wsl(),
-    });
-    let mut state = GameState::new_with_options(bounds, cli.speed);
+    let mut bounds = grid_bounds_from_frame(frame_area, cli.debug)?;
+    let mut input = InputHandler::new();
+    let mut start_speed_level = cli.speed.clamp(1, MAX_START_SPEED_LEVEL);
+    let mut state = GameState::new_with_options(bounds, start_speed_level);
     state.status = GameStatus::Paused;
     let mut game_over_reference_high_score = high_score;
 
@@ -104,6 +95,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     let mut pause_menu_selected_idx = 0usize;
     let mut game_over_menu_selected_idx = 0usize;
     let mut theme_selection_mode: Option<ThemeSelectionMode> = None;
+    let mut start_speed_adjust_mode = false;
     let mut theme_selection_dirty = false;
     let mut pending_resize_reconcile = false;
     let mut last_resize_reconcile = Instant::now();
@@ -111,7 +103,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     loop {
         if pending_resize_reconcile || last_resize_reconcile.elapsed() >= Duration::from_millis(250)
         {
-            reconcile_resize_if_needed(&mut terminal, &cli, &mut bounds, &mut state)?;
+            reconcile_resize_if_needed(terminal, cli.debug, &mut bounds, &mut state)?;
             pending_resize_reconcile = false;
             last_resize_reconcile = Instant::now();
         }
@@ -147,7 +139,6 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 HudInfo {
                     high_score,
                     game_over_reference_high_score,
-                    controller_detected: input.controller_detected(),
                     theme: themes.current_theme(),
                     debug: cli.debug,
                     debug_line: if cli.debug {
@@ -158,6 +149,8 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 },
                 MenuUiState {
                     start_selected_idx: start_menu_selected_idx,
+                    start_speed_level,
+                    start_speed_adjust_mode,
                     pause_selected_idx: pause_menu_selected_idx,
                     game_over_selected_idx: game_over_menu_selected_idx,
                     start_theme_select,
@@ -204,18 +197,54 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     continue;
                 }
 
+                if start_speed_adjust_mode {
+                    match game_input {
+                        GameInput::Direction(Direction::Up) => {
+                            start_speed_level = start_speed_level
+                                .saturating_add(1)
+                                .min(MAX_START_SPEED_LEVEL);
+                            state.set_base_speed_level(start_speed_level);
+                        }
+                        GameInput::Direction(Direction::Down) => {
+                            start_speed_level = start_speed_level
+                                .saturating_sub(1)
+                                .max(MIN_START_SPEED_LEVEL);
+                            state.set_base_speed_level(start_speed_level);
+                        }
+                        GameInput::Confirm
+                        | GameInput::Direction(Direction::Right)
+                        | GameInput::Direction(Direction::Left)
+                        | GameInput::Pause => {
+                            start_speed_adjust_mode = false;
+                        }
+                        _ => {}
+                    }
+
+                    continue;
+                }
+
                 match game_input {
                     GameInput::Direction(Direction::Up) => {
-                        start_menu_selected_idx = wrap_prev(start_menu_selected_idx, 3);
+                        start_menu_selected_idx =
+                            wrap_prev(start_menu_selected_idx, START_MENU_ITEM_COUNT);
                     }
                     GameInput::Direction(Direction::Down) => {
-                        start_menu_selected_idx = wrap_next(start_menu_selected_idx, 3);
+                        start_menu_selected_idx =
+                            wrap_next(start_menu_selected_idx, START_MENU_ITEM_COUNT);
                     }
                     GameInput::Confirm | GameInput::Direction(Direction::Right) => {
                         match start_menu_selected_idx {
-                            0 => state.status = GameStatus::Playing,
-                            1 => theme_selection_mode = Some(ThemeSelectionMode::StartMenu),
-                            2 => {
+                            START_MENU_START_IDX => {
+                                state = GameState::new_with_options(bounds, start_speed_level);
+                                state.status = GameStatus::Playing;
+                            }
+                            START_MENU_SPEED_IDX => {
+                                start_speed_adjust_mode = true;
+                            }
+                            START_MENU_THEME_IDX => {
+                                theme_selection_mode = Some(ThemeSelectionMode::StartMenu)
+                            }
+                            START_MENU_QUIT_IDX => {
                                 persist_selected_theme_if_dirty(
                                     &themes,
                                     &mut theme_selection_dirty,
@@ -257,7 +286,10 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 }
 
                 match game_input {
-                    GameInput::Direction(Direction::Up) | GameInput::Direction(Direction::Down) => {
+                    GameInput::Direction(Direction::Up) => {
+                        pause_menu_selected_idx = wrap_prev(pause_menu_selected_idx, 3);
+                    }
+                    GameInput::Direction(Direction::Down) => {
                         pause_menu_selected_idx = wrap_next(pause_menu_selected_idx, 3);
                     }
                     GameInput::Confirm | GameInput::Direction(Direction::Right) => {
@@ -285,7 +317,10 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
 
             if matches!(state.status, GameStatus::GameOver | GameStatus::Victory) {
                 match game_input {
-                    GameInput::Direction(Direction::Up) | GameInput::Direction(Direction::Down) => {
+                    GameInput::Direction(Direction::Up) => {
+                        game_over_menu_selected_idx = wrap_prev(game_over_menu_selected_idx, 2);
+                    }
+                    GameInput::Direction(Direction::Down) => {
                         game_over_menu_selected_idx = wrap_next(game_over_menu_selected_idx, 2);
                     }
                     GameInput::Confirm | GameInput::Direction(Direction::Right) => {
@@ -304,7 +339,10 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
             }
 
             match game_input {
-                GameInput::CycleTheme => {}
+                GameInput::CycleTheme => {
+                    themes.select_next();
+                    theme_selection_dirty = true;
+                }
                 other => handle_input(&mut state, other),
             }
         }
@@ -323,6 +361,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 game_over_reference_high_score = high_score;
                 game_over_menu_selected_idx = 0;
                 theme_selection_mode = None;
+                start_speed_adjust_mode = false;
 
                 if state.score > high_score {
                     high_score = state.score;
@@ -334,10 +373,12 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
 
             if state.status == GameStatus::Paused && !state.is_start_screen() {
                 pause_menu_selected_idx = 0;
+                start_speed_adjust_mode = false;
             }
 
             if state.status == GameStatus::Playing {
                 theme_selection_mode = None;
+                start_speed_adjust_mode = false;
             }
 
             last_status = state.status;
@@ -383,8 +424,8 @@ fn handle_input(state: &mut GameState, input: GameInput) {
 ///
 /// This uses the exact same dimensions as the renderer, eliminating any
 /// possible mismatch between the logical grid and the gameplay viewport.
-fn grid_bounds_from_frame(size: Size, cli: &Cli) -> io::Result<GridSize> {
-    let hud_rows: u16 = 2 + u16::from(cli.debug) + HUD_BOTTOM_MARGIN_Y;
+fn grid_bounds_from_frame(size: Size, debug_enabled: bool) -> io::Result<GridSize> {
+    let hud_rows: u16 = 2 + u16::from(debug_enabled) + HUD_BOTTOM_MARGIN_Y;
 
     let min_w: u16 = PLAY_AREA_MARGIN_X.saturating_mul(2).saturating_add(1);
     let min_h: u16 = hud_rows
@@ -414,8 +455,8 @@ fn grid_bounds_from_frame(size: Size, cli: &Cli) -> io::Result<GridSize> {
     // so the logical game height is double the available terminal rows.
     let game_h = viewport_h.saturating_mul(2);
 
-    let width = cli.width.unwrap_or(viewport_w).min(viewport_w);
-    let height = cli.height.unwrap_or(game_h).min(game_h);
+    let width = viewport_w;
+    let height = game_h;
 
     Ok(GridSize { width, height })
 }
@@ -442,13 +483,13 @@ fn format_debug_line(
 }
 
 fn reconcile_resize_if_needed(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    cli: &Cli,
+    terminal: &mut AppTerminal,
+    debug_enabled: bool,
     bounds: &mut GridSize,
     state: &mut GameState,
 ) -> io::Result<()> {
     let frame_area = terminal.size()?;
-    let Ok(next_bounds) = grid_bounds_from_frame(frame_area, cli) else {
+    let Ok(next_bounds) = grid_bounds_from_frame(frame_area, debug_enabled) else {
         return Ok(());
     };
 
@@ -458,39 +499,6 @@ fn reconcile_resize_if_needed(
     }
 
     Ok(())
-}
-
-fn setup_terminal() -> io::Result<Terminal<CrosstermBackend<io::Stdout>>> {
-    enable_raw_mode()?;
-
-    let mut stdout = io::stdout();
-    if let Err(error) = execute!(stdout, EnterAlternateScreen, Hide) {
-        let _ = disable_raw_mode();
-        return Err(error);
-    }
-
-    let backend = CrosstermBackend::new(stdout);
-    match Terminal::new(backend) {
-        Ok(terminal) => Ok(terminal),
-        Err(error) => {
-            let _ = cleanup_terminal_best_effort();
-            Err(error)
-        }
-    }
-}
-
-fn cleanup_terminal_best_effort() -> io::Result<()> {
-    let _ = disable_raw_mode();
-    let mut stdout = io::stdout();
-    execute!(stdout, Show, LeaveAlternateScreen)
-}
-
-struct TerminalGuard;
-
-impl Drop for TerminalGuard {
-    fn drop(&mut self) {
-        let _ = cleanup_terminal_best_effort();
-    }
 }
 
 fn tick_interval_for_speed(speed_level: u32) -> Duration {
