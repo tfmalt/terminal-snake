@@ -1,9 +1,9 @@
 # Terminal Snake
 
-This is a retro terminal-based Snake game written in Rust, with a modern terminal first
+A retro terminal-based Snake game written in Rust. with a modern terminal first
 interface. 
 
-As someone who enjoy doing work in the terminal I wanted to create a "making time pass while compiling -> waiting for the AI-model to finish thinking" snake game with a modern TUI feel.
+As someone who enjoy doing work in the terminal, I wanted to create a "making time pass while compiling -> waiting for the AI-model to finish thinking" snake game with a modern TUI feel.
 
 ![Terminal Snake gameplay screenshot](assets/screenshots/terminal-snake.png)
 
