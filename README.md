@@ -79,9 +79,6 @@ CLI options:
 ```
 Options:
       --speed <SPEED>    Starting speed level [default: 1]
-      --width <WIDTH>    Grid width in logical cells (defaults to terminal width)
-      --height <HEIGHT>  Grid height in logical cells (defaults to terminal height)
-      --no-controller    Disable controller input even when available
       --debug            Show diagnostic debug line at the bottom of the screen
       --ascii-glyphs     Use an ASCII-safe glyph palette for poor font environments
   -h, --help             Print help
@@ -92,8 +89,6 @@ Options:
 - **Half-block rendering** — every game cell is two Unicode half-block
   characters composited together, giving a smooth, colorful appearance without
   color-emoji dependency.
-- **Game controller support** — D-pad and analog stick via `gilrs` (disabled
-  automatically on WSL).
 - **12 built-in themes** — Ayu, Catppuccin, Ember, Everforest, Gruvbox,
   Matrix, Nord, One Dark, OpenCode, System, tm, and Tokyo Night. 
 - **User themes** — drop JSON files into
@@ -107,13 +102,13 @@ Options:
 
 ## Controls
 
-| Action          | Keyboard                        | Controller         |
-|-----------------|---------------------------------|--------------------|
-| Move            | Arrow keys or W A S D           | D-pad / left stick |
-| Pause / resume  | P or Esc                        | Start              |
-| Confirm / select| Enter or Space                  | A                  |
-| Quit            | Q or Ctrl-C                     | —                  |
-| Cycle theme     | T (during gameplay)             | —                  |
+| Action          | Keyboard              |
+|-----------------|-----------------------|
+| Move            | Arrow keys or W A S D |
+| Pause / resume  | P or Esc              |
+| Confirm / select| Enter or Space        |
+| Quit            | Q or Ctrl-C           |
+| Cycle theme     | T (during gameplay)   |
 
 In menus, `Up`/`Down` navigate items and `Enter`/`Space`/`→` confirms.
 Press `Esc`/`←`/`Enter` to close the inline theme picker.
@@ -136,17 +131,19 @@ A theme JSON file looks like:
 ```json
 {
   "name": "My Theme",
-  "snake_head": "#e06c75",
-  "snake_body": "#98c379",
-  "snake_tail": "#61afef",
-  "food": "#e5c07b",
-  "terminal_bg": "reset",
-  "field_bg": "#282c34",
-  "ui_bg": "#21252b",
-  "ui_text": "#abb2bf",
-  "ui_accent": "#e06c75",
-  "ui_muted": "#5c6370",
-  "ui_bright": "#ffffff"
+  "theme": {
+    "snake_head": "#e06c75",
+    "snake_body": "#98c379",
+    "snake_tail": "#61afef",
+    "food": "#e5c07b",
+    "terminal_bg": "reset",
+    "field_bg": "#282c34",
+    "ui_bg": "#21252b",
+    "ui_text": "#abb2bf",
+    "ui_accent": "#e06c75",
+    "ui_muted": "#5c6370",
+    "ui_bright": "#ffffff"
+  }
 }
 ```
 
@@ -175,7 +172,8 @@ src/
   game.rs          Game state, tick logic, collision detection
   snake.rs         Snake data structure and movement
   food.rs          Food spawning logic
-  input.rs         Unified input handler (keyboard + controller)
+  input.rs         Keyboard input handler
+  terminal_runtime.rs Terminal raw-mode/alternate-screen lifecycle
   renderer.rs      Ratatui rendering: grid, HUD, menus
   theme.rs         Theme catalog, JSON loading, user-theme merging
   block_font.rs    Block-art typeface for the title screen
@@ -185,7 +183,7 @@ src/
   ui/
     mod.rs
     menu.rs        Start, pause, and game-over screen widgets
-    hud.rs         Score, speed level, controller-status HUD
+    hud.rs         Score and speed-level HUD
   bin/
     fontest.rs     Font/glyph preview utility
 ```

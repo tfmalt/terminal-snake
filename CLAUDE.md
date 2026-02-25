@@ -7,7 +7,7 @@ project.
 
 A cross-platform, terminal-based Snake game written in Rust. The game targets
 modern terminal emulators on Linux, macOS, and Windows (including WSL). Input
-is supported via keyboard and optionally via game controller. Graphics use
+is keyboard-only. Graphics use
 Unicode block elements and Nerd Font glyphs — no ASCII fallback, no color
 emoji dependency.
 
@@ -15,7 +15,6 @@ emoji dependency.
 
 - `ratatui`: terminal UI rendering framework.
 - `crossterm`: cross-platform raw mode, keyboard input, cursor control.
-- `gilrs`: game controller input (disabled automatically under WSL).
 - `unicode-width`: correct cell-width calculation for Unicode glyphs.
 - `serde` + `serde_json`: high score persistence.
 - `clap`: CLI argument parsing (for flags like `--speed`).
@@ -41,7 +40,8 @@ snake/
     ├── game.rs             # Game state, tick logic, collision detection
     ├── snake.rs            # Snake data structure and movement
     ├── food.rs             # Food spawning logic
-    ├── input.rs            # Unified input handler (keyboard + controller)
+    ├── input.rs            # Keyboard input handler
+    ├── terminal_runtime.rs # Raw mode + alternate-screen lifecycle wrapper
     ├── renderer.rs         # Ratatui rendering: grid, HUD, menus
     ├── ui/
     │   ├── mod.rs
@@ -59,7 +59,7 @@ snake/
 The main loop runs at a fixed tick rate driven by `std::thread::sleep`. The
 tick rate increases as the score grows (speed levels). Each tick:
 
-1. Poll input (keyboard via crossterm, controller via gilrs if available)
+1. Poll input (via `input.rs`; terminal backend managed by `terminal_runtime.rs`)
 2. Update game state (move snake, check collisions, spawn food)
 3. Render frame (ratatui)
 
@@ -68,8 +68,7 @@ only one is consumed per tick to prevent 180° reversals from rapid input.
 
 ### Input Abstraction
 
-All input sources (keyboard, D-pad, analog stick) funnel into a single
-`GameInput` enum:
+Keyboard events funnel into a single `GameInput` enum:
 
 ```rust
 pub enum GameInput {
@@ -80,8 +79,8 @@ pub enum GameInput {
 }
 ```
 
-The `input.rs` module is the only place that knows about `crossterm` or
-`gilrs`.
+`crossterm` integration is isolated to `input.rs` (event mapping) and
+`terminal_runtime.rs` (raw mode + alternate screen lifecycle).
 
 ### Grid Coordinate System
 
@@ -112,9 +111,8 @@ pub const GLYPH_EMPTY: &str            = " ";
 ### Platform Detection (WSL)
 
 `platform.rs` detects WSL at startup by checking `/proc/version` for
-"microsoft" (case-insensitive). If WSL is detected, controller support is
-disabled and a note is shown in the HUD. No panics, no user-facing errors — it
-degrades silently.
+"microsoft" (case-insensitive). A note is shown in the HUD on WSL. No panics,
+no user-facing errors — it degrades silently.
 
 ### High Score Persistence
 

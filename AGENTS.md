@@ -41,7 +41,7 @@ is new to Rust and this stack.
 - For non-trivial edits, include a short "what changed" and "why this Rust
   approach" explanation in agent responses.
 - Avoid assuming prior familiarity with crates like `ratatui`, `crossterm`,
-  `gilrs`, or common Rust patterns used by them.
+  or common Rust patterns used by them.
 
 Teaching style expectations:
 
@@ -67,7 +67,7 @@ Run from repository root.
 - Debug build: `cargo build`
 - Release build: `cargo build --release`
 - Run game: `cargo run`
-- Run with CLI args: `cargo run -- --speed 2 --width 40 --height 20`
+- Run with CLI args: `cargo run -- --speed 2 --debug`
 
 ### Format and Lint
 
@@ -144,7 +144,7 @@ Use this before finalizing substantial changes:
 - `expect()` is acceptable only when failure is unrecoverable and message is
   clear.
 - If panics are possible at startup, surface actionable diagnostics.
-- Gracefully degrade optional features (example: disable controller on WSL).
+- Gracefully degrade optional features on platform differences when needed.
 
 ### Comments and Documentation
 
@@ -164,7 +164,8 @@ Use this before finalizing substantial changes:
 
 ### Architecture Constraints (From Spec)
 
-- `input.rs` is the only module that knows `crossterm`/`gilrs` specifics.
+- `crossterm` specifics must be isolated to `input.rs` (event mapping) and
+  `terminal_runtime.rs` (raw mode + alternate screen lifecycle).
 - `renderer.rs` must not mutate gameplay state.
 - Define glyph constants in `config.rs`; do not scatter glyph literals.
 - Respect logical grid mapping (2 terminal columns x 1 row per logical cell).
