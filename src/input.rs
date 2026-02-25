@@ -59,6 +59,7 @@ impl Default for InputConfig {
 /// Non-blocking input poller for keyboard and controller sources.
 pub struct InputHandler {
     gilrs: Option<Gilrs>,
+    controller_detected: bool,
     last_stick_direction: Option<Direction>,
 }
 
@@ -66,10 +67,20 @@ impl InputHandler {
     /// Builds a new input handler.
     #[must_use]
     pub fn new(config: InputConfig) -> Self {
+        let gilrs = initialize_gilrs(config);
+        let controller_detected = gilrs.as_ref().is_some_and(controller_is_connected);
+
         Self {
-            gilrs: initialize_gilrs(config),
+            gilrs,
+            controller_detected,
             last_stick_direction: None,
         }
+    }
+
+    /// Returns whether at least one game controller is currently connected.
+    #[must_use]
+    pub fn controller_detected(&self) -> bool {
+        self.controller_detected
     }
 
     /// Polls for one input event without blocking the game loop.
@@ -108,6 +119,8 @@ impl InputHandler {
         }
 
         if let Some(gilrs) = &mut self.gilrs {
+            self.controller_detected = controller_is_connected(gilrs);
+
             while let Some(controller_event) = gilrs.next_event() {
                 match controller_event.event {
                     EventType::ButtonPressed(button, _) => {
@@ -137,10 +150,18 @@ impl InputHandler {
                     _ => {}
                 }
             }
+
+            self.controller_detected = controller_is_connected(gilrs);
+        } else {
+            self.controller_detected = false;
         }
 
         Ok(None)
     }
+}
+
+fn controller_is_connected(gilrs: &Gilrs) -> bool {
+    gilrs.gamepads().any(|(_, gamepad)| gamepad.is_connected())
 }
 
 fn map_terminal_event(event: Event) -> Option<GameInput> {

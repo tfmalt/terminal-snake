@@ -96,7 +96,6 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     state.status = GameStatus::Paused;
     let mut game_over_reference_high_score = high_score;
 
-    let controller_enabled = !cli.no_controller && !platform.is_wsl();
     let mut last_tick = Instant::now();
     let mut last_status = state.status;
     let mut last_input: Option<GameInput> = None;
@@ -148,7 +147,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 HudInfo {
                     high_score,
                     game_over_reference_high_score,
-                    controller_enabled,
+                    controller_detected: input.controller_detected(),
                     theme: themes.current_theme(),
                     debug: cli.debug,
                     debug_line: if cli.debug {

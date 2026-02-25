@@ -15,7 +15,7 @@ const HUD_INNER_MARGIN_X: u16 = 1;
 pub struct HudInfo<'a> {
     pub high_score: u32,
     pub game_over_reference_high_score: u32,
-    pub controller_enabled: bool,
+    pub controller_detected: bool,
     pub theme: &'a Theme,
     /// Whether the debug row is enabled (`--debug` flag).
     pub debug: bool,
@@ -88,7 +88,7 @@ pub fn render_hud(
     let right_text = format!(
         "Hi: {} {}{}",
         info.high_score,
-        if info.controller_enabled {
+        if info.controller_detected {
             "[PAD]"
         } else {
             "[NOPAD]"

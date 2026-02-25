@@ -20,6 +20,7 @@ pub fn render_start_menu(
     frame: &mut Frame<'_>,
     area: Rect,
     _high_score: u32,
+    controller_detected: bool,
     theme: &Theme,
     selected_idx: usize,
     theme_select: Option<ThemeSelectView<'_>>,
@@ -50,19 +51,29 @@ pub fn render_start_menu(
     let title_row_height: u16 = if use_full_font || can_overlap { 5 } else { 6 };
 
     let logo_to_menu_gap = MENU_MARGIN_ROWS.saturating_sub(1);
-    let popup_height = menu_popup_height(title_row_height, menu_height)
-        .saturating_add(4)
-        .saturating_sub(1);
+    let popup_height = menu_popup_height(title_row_height, menu_height).saturating_add(4);
     let popup = centered_popup_with_height(area, 76, popup_height);
     frame.render_widget(Clear, popup);
     render_menu_panel(frame, popup, theme);
 
-    let [_, title_row, _, body_row, _, hint_row, copyright_row, _, _] = Layout::vertical([
+    let [
+        _,
+        title_row,
+        _,
+        body_row,
+        _,
+        controller_row,
+        hint_row,
+        copyright_row,
+        _,
+        _,
+    ] = Layout::vertical([
         Constraint::Length(MENU_MARGIN_ROWS),
         Constraint::Length(title_row_height),
         Constraint::Length(logo_to_menu_gap),
         Constraint::Length(menu_height),
         Constraint::Length(MENU_MARGIN_ROWS),
+        Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -196,8 +207,23 @@ pub fn render_start_menu(
         menu_area,
     );
 
+    if controller_detected {
+        frame.render_widget(
+            Paragraph::new(Line::from("Controller Detected"))
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(theme.ui_accent).bg(theme.ui_bg)),
+            controller_row,
+        );
+    }
+
+    let movement_hint = if controller_detected {
+        "Use arrows/WASD or D-pad/stick to move"
+    } else {
+        "Use arrows/WASD to move"
+    };
+
     frame.render_widget(
-        Paragraph::new(Line::from("Use arrows/WASD or D-pad/stick to move"))
+        Paragraph::new(Line::from(movement_hint))
             .alignment(Alignment::Center)
             .style(Style::default().fg(theme.ui_muted).bg(theme.ui_bg)),
         hint_row,
@@ -278,6 +304,7 @@ pub fn render_game_over_menu(
     high_score: u32,
     death_reason: Option<DeathReason>,
     game_length: Duration,
+    controller_detected: bool,
     theme: &Theme,
     selected_idx: usize,
 ) {
@@ -346,17 +373,26 @@ pub fn render_game_over_menu(
     body.push(menu_option_line("Quit", selected_idx == 1, theme));
 
     let menu_height = u16::try_from(body.len()).unwrap_or(u16::MAX);
-    let popup_height = menu_popup_height(title_height, menu_height).saturating_add(1);
+    let popup_height = menu_popup_height(title_height, menu_height).saturating_add(2);
     let popup = centered_popup_with_height(area, 70, popup_height);
     frame.render_widget(Clear, popup);
     render_menu_panel(frame, popup, theme);
 
-    let [_, title_row, _, body_row, _, footer_row] = Layout::vertical([
+    let [
+        _,
+        title_row,
+        _,
+        body_row,
+        _,
+        footer_controller_row,
+        footer_hint_row,
+    ] = Layout::vertical([
         Constraint::Length(MENU_MARGIN_ROWS),
         Constraint::Length(title_height),
         Constraint::Length(MENU_MARGIN_ROWS),
         Constraint::Length(menu_height),
         Constraint::Length(MENU_MARGIN_ROWS),
+        Constraint::Length(1),
         Constraint::Length(1),
     ])
     .areas(popup);
@@ -378,11 +414,26 @@ pub fn render_game_over_menu(
         centered_body,
     );
 
+    if controller_detected {
+        frame.render_widget(
+            Paragraph::new(Line::from("Controller Detected"))
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(theme.ui_accent).bg(theme.ui_bg)),
+            footer_controller_row,
+        );
+    }
+
+    let movement_hint = if controller_detected {
+        "Use arrows/WASD or D-pad/stick to move"
+    } else {
+        "Use arrows/WASD to move"
+    };
+
     frame.render_widget(
-        Paragraph::new(Line::from("Use arrows/WASD or D-pad/stick to move"))
+        Paragraph::new(Line::from(movement_hint))
             .alignment(Alignment::Center)
             .style(Style::default().fg(theme.ui_muted).bg(theme.ui_bg)),
-        footer_row,
+        footer_hint_row,
     );
 
     render_menu_bottom_margin(frame, popup, theme);
