@@ -1,0 +1,29 @@
+{
+  "name": "Molokai",
+  "defs": {
+    "terminal": "#101010",
+    "field":    "#1B1D1E",
+    "panel":    "#232526",
+    "head":     "#A6E22E",
+    "body":     "#66D9EF",
+    "tail":     "#8B8878",
+    "food_clr": "#FF5F87",
+    "text":     "#F8F8F2",
+    "accent":   "#FD971F",
+    "muted":    "#8B8878",
+    "bright":   "#C9C6B8"
+  },
+  "theme": {
+    "snake_head":  "head",
+    "snake_body":  "body",
+    "snake_tail":  "tail",
+    "food":        "food_clr",
+    "terminal_bg": "terminal",
+    "field_bg":    "field",
+    "ui_bg":       "panel",
+    "ui_text":     "text",
+    "ui_accent":   "accent",
+    "ui_muted":    "muted",
+    "ui_bright":   "bright"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "Monokai",
+  "defs": {
+    "terminal": "#1E1F1C",
+    "field":    "#272822",
+    "panel":    "#3E3D32",
+    "head":     "#A6E22E",
+    "body":     "#66D9EF",
+    "tail":     "#75715E",
+    "food_clr": "#F92672",
+    "text":     "#F8F8F2",
+    "accent":   "#FD971F",
+    "muted":    "#75715E",
+    "bright":   "#B4B19F"
+  },
+  "theme": {
+    "snake_head":  "head",
+    "snake_body":  "body",
+    "snake_tail":  "tail",
+    "food":        "food_clr",
+    "terminal_bg": "terminal",
+    "field_bg":    "field",
+    "ui_bg":       "panel",
+    "ui_text":     "text",
+    "ui_accent":   "accent",
+    "ui_muted":    "muted",
+    "ui_bright":   "bright"
+  }
+}
