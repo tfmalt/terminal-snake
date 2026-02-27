@@ -47,4 +47,3 @@ temp/
 # --- Local tooling caches ---
 .cache/
 PLAN.md
-Cargo.lock
