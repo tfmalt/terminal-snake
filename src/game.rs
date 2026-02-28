@@ -3,7 +3,10 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::time::{Duration, Instant};
 
-use crate::config::{FOOD_PER_SPEED_LEVEL, GridSize, MAX_START_SPEED_LEVEL};
+use crate::config::{
+    DEFAULT_TICK_INTERVAL_MS, FOOD_PER_SPEED_LEVEL, GridSize, MAX_START_SPEED_LEVEL,
+    MIN_TICK_INTERVAL_MS,
+};
 use crate::food::Food;
 use crate::input::GameInput;
 use crate::snake::{Position, Snake};
@@ -41,20 +44,26 @@ pub struct GlowEffect {
 
 impl GlowEffect {
     const SPEED_LEVEL_UP_DURATION: Duration = Duration::from_secs(3);
-    const SUPER_FOOD_DURATION: Duration = Duration::from_millis(1800);
+    pub const SUPER_FOOD_RIPPLE_SPEED_MULTIPLIER: f32 = 5.0;
 
-    /// Creates a new glow effect with trigger-specific duration.
+    /// Creates a speed-level glow effect.
     #[must_use]
-    pub fn new(trigger: GlowTrigger) -> Self {
-        let duration = match trigger {
-            GlowTrigger::SpeedLevelUp => Self::SPEED_LEVEL_UP_DURATION,
-            GlowTrigger::SuperFoodEaten => Self::SUPER_FOOD_DURATION,
-        };
-
+    pub fn speed_level_up() -> Self {
         Self {
-            trigger,
+            trigger: GlowTrigger::SpeedLevelUp,
             started_at: Instant::now(),
-            duration,
+            duration: Self::SPEED_LEVEL_UP_DURATION,
+        }
+    }
+
+    /// Creates a super-food ripple effect that lasts long enough to traverse
+    /// the current snake body.
+    #[must_use]
+    pub fn super_food_ripple(snake_len: usize, speed_level: u32) -> Self {
+        Self {
+            trigger: GlowTrigger::SuperFoodEaten,
+            started_at: Instant::now(),
+            duration: Self::super_food_duration(snake_len, speed_level),
         }
     }
 
@@ -88,6 +97,39 @@ impl GlowEffect {
     pub fn is_active(&self) -> bool {
         self.progress() < 1.0
     }
+
+    /// Returns elapsed wall-clock time since the effect started.
+    #[must_use]
+    pub fn elapsed(&self) -> Duration {
+        self.started_at.elapsed()
+    }
+
+    fn super_food_duration(snake_len: usize, speed_level: u32) -> Duration {
+        let tick_seconds = tick_interval_for_speed(speed_level).as_secs_f32();
+        if tick_seconds <= 0.0 {
+            return Duration::from_millis(1);
+        }
+
+        let snake_cells_per_second = 1.0 / tick_seconds;
+        let ripple_cells_per_second =
+            snake_cells_per_second * Self::SUPER_FOOD_RIPPLE_SPEED_MULTIPLIER;
+        if ripple_cells_per_second <= 0.0 {
+            return Duration::from_millis(1);
+        }
+
+        let body_len = snake_len.max(1) as f32;
+        let traversal_seconds = body_len / ripple_cells_per_second;
+        let padded_seconds = traversal_seconds + tick_seconds;
+        Duration::from_secs_f32(padded_seconds.max(0.001))
+    }
+}
+
+fn tick_interval_for_speed(speed_level: u32) -> Duration {
+    let speed_penalty_ms = u64::from(speed_level.saturating_sub(1)) * 10;
+    let clamped_ms = DEFAULT_TICK_INTERVAL_MS
+        .saturating_sub(speed_penalty_ms)
+        .max(MIN_TICK_INTERVAL_MS);
+    Duration::from_millis(clamped_ms)
 }
 
 /// Complete mutable game state for one session.
@@ -252,9 +294,12 @@ impl GameState {
             self.update_speed_level();
 
             if eaten_food.is_super() {
-                self.glow = Some(GlowEffect::new(GlowTrigger::SuperFoodEaten));
+                self.glow = Some(GlowEffect::super_food_ripple(
+                    self.snake.len(),
+                    self.speed_level,
+                ));
             } else if self.speed_level > prev_speed_level {
-                self.glow = Some(GlowEffect::new(GlowTrigger::SpeedLevelUp));
+                self.glow = Some(GlowEffect::speed_level_up());
             }
 
             if self.snake.len() >= self.bounds.total_cells() {

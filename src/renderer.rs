@@ -3,9 +3,13 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::widgets::Block;
 
-use crate::config::{GridSize, PLAY_AREA_MARGIN_X, PLAY_AREA_MARGIN_Y, Theme, glyphs};
+use crate::config::{
+    DEFAULT_TICK_INTERVAL_MS, GridSize, MIN_TICK_INTERVAL_MS, PLAY_AREA_MARGIN_X,
+    PLAY_AREA_MARGIN_Y, Theme, glyphs,
+};
 use crate::game::{GameState, GameStatus, GlowEffect, GlowTrigger};
 use crate::platform::Platform;
+use crate::snake::Position;
 use crate::ui::hud::{HudInfo, render_hud};
 use crate::ui::menu::{
     ThemeSelectView, render_game_over_menu, render_pause_menu, render_start_menu,
@@ -43,7 +47,8 @@ enum CellKind {
 struct CellRender {
     kind: CellKind,
     bg: ratatui::style::Color,
-    neighbor_flash: bool,
+    bg_flash_amount: f32,
+    snake_body_flash_amount: f32,
 }
 
 /// Renders the full game frame from immutable state.
@@ -231,9 +236,29 @@ fn render_play_area(
     let bounds = state.bounds();
     let grid = build_cell_grid(state, bounds);
     let glow = state.active_glow();
+    let snake_cells = build_snake_cell_mask(state, bounds);
     let level_up_neighbor_flash = glow.and_then(level_up_neighbor_flash_amount).unwrap_or(0.0);
     let neighbor_flash_mask = if level_up_neighbor_flash > 0.0 {
-        Some(build_snake_neighbor_mask(state, bounds))
+        Some(build_snake_neighbor_mask(state, bounds, &snake_cells))
+    } else {
+        None
+    };
+    let super_food_ripple_flash = glow.and_then(super_food_ripple_flash_amount).unwrap_or(0.0);
+    let super_food_ripple_center = super_food_ripple_center_position(state, glow);
+    let super_food_ripple_center_idx = super_food_ripple_center.and_then(|center| {
+        if center.is_within_bounds(bounds) {
+            Some(center.y as usize * usize::from(bounds.width) + center.x as usize)
+        } else {
+            None
+        }
+    });
+    let super_food_body_expansion_mask = if super_food_ripple_flash > 0.0 {
+        build_super_food_body_expansion_mask(bounds, super_food_ripple_center)
+    } else {
+        None
+    };
+    let super_food_ripple_mask = if super_food_ripple_flash > 0.0 {
+        build_super_food_ripple_mask(bounds, &snake_cells, super_food_ripple_center)
     } else {
         None
     };
@@ -257,14 +282,30 @@ fn render_play_area(
                 break;
             }
 
-            let top_kind = grid[top_game_row * usize::from(bounds.width) + col];
+            let mut top_kind = grid[top_game_row * usize::from(bounds.width) + col];
             let top_idx = top_game_row * usize::from(bounds.width) + col;
-            let bot_kind = if bot_game_row < game_h {
+            let mut bot_kind = if bot_game_row < game_h {
                 grid[bot_game_row * usize::from(bounds.width) + col]
             } else {
                 CellKind::Empty
             };
             let bot_idx = bot_game_row * usize::from(bounds.width) + col;
+
+            if super_food_body_expansion_mask
+                .as_ref()
+                .is_some_and(|mask| mask[top_idx])
+                && matches!(top_kind, CellKind::Empty)
+            {
+                top_kind = CellKind::SnakeBody(0);
+            }
+            if bot_game_row < game_h
+                && super_food_body_expansion_mask
+                    .as_ref()
+                    .is_some_and(|mask| mask[bot_idx])
+                && matches!(bot_kind, CellKind::Empty)
+            {
+                bot_kind = CellKind::SnakeBody(0);
+            }
 
             let top_neighbor_flash = neighbor_flash_mask
                 .as_ref()
@@ -273,6 +314,42 @@ fn render_play_area(
                 && neighbor_flash_mask
                     .as_ref()
                     .is_some_and(|mask| mask[bot_idx]);
+            let top_super_flash = super_food_ripple_mask
+                .as_ref()
+                .is_some_and(|mask| mask[top_idx]);
+            let bot_super_flash = bot_game_row < game_h
+                && super_food_ripple_mask
+                    .as_ref()
+                    .is_some_and(|mask| mask[bot_idx]);
+            let top_flash_amount = if top_super_flash {
+                super_food_ripple_flash
+            } else if top_neighbor_flash {
+                level_up_neighbor_flash
+            } else {
+                0.0
+            };
+            let bot_flash_amount = if bot_super_flash {
+                super_food_ripple_flash
+            } else if bot_neighbor_flash {
+                level_up_neighbor_flash
+            } else {
+                0.0
+            };
+            let top_body_flash_amount = if matches!(top_kind, CellKind::SnakeBody(_))
+                && super_food_ripple_center_idx == Some(top_idx)
+            {
+                super_food_ripple_flash
+            } else {
+                0.0
+            };
+            let bot_body_flash_amount = if bot_game_row < game_h
+                && matches!(bot_kind, CellKind::SnakeBody(_))
+                && super_food_ripple_center_idx == Some(bot_idx)
+            {
+                super_food_ripple_flash
+            } else {
+                0.0
+            };
 
             let top_bg = if checkerboard_enabled {
                 checker_bg(col, top_game_row, theme)
@@ -287,25 +364,25 @@ fn render_play_area(
             let top = CellRender {
                 kind: top_kind,
                 bg: top_bg,
-                neighbor_flash: top_neighbor_flash,
+                bg_flash_amount: top_flash_amount,
+                snake_body_flash_amount: top_body_flash_amount,
             };
             let bot = CellRender {
                 kind: bot_kind,
                 bg: bot_bg,
-                neighbor_flash: bot_neighbor_flash,
+                bg_flash_amount: bot_flash_amount,
+                snake_body_flash_amount: bot_body_flash_amount,
             };
-            let (glyph, fg, bg) =
-                composite_half_block(top, bot, theme, glow, level_up_neighbor_flash);
+            let (glyph, fg, bg) = composite_half_block(top, bot, theme, glow);
             buffer.set_string(x, y, glyph, Style::new().fg(fg).bg(bg));
         }
     }
 }
 
-fn build_snake_neighbor_mask(state: &GameState, bounds: GridSize) -> Vec<bool> {
+fn build_snake_cell_mask(state: &GameState, bounds: GridSize) -> Vec<bool> {
     let width = usize::from(bounds.width);
     let height = usize::from(bounds.height);
     let mut snake_cells = vec![false; width * height];
-    let mut neighbors = vec![false; width * height];
 
     for segment in state.snake.segments() {
         if segment.is_within_bounds(bounds) {
@@ -313,6 +390,18 @@ fn build_snake_neighbor_mask(state: &GameState, bounds: GridSize) -> Vec<bool> {
             snake_cells[idx] = true;
         }
     }
+
+    snake_cells
+}
+
+fn build_snake_neighbor_mask(
+    state: &GameState,
+    bounds: GridSize,
+    snake_cells: &[bool],
+) -> Vec<bool> {
+    let width = usize::from(bounds.width);
+    let height = usize::from(bounds.height);
+    let mut neighbors = vec![false; width * height];
 
     for segment in state.snake.segments() {
         for dy in -1..=1 {
@@ -340,6 +429,91 @@ fn build_snake_neighbor_mask(state: &GameState, bounds: GridSize) -> Vec<bool> {
     }
 
     neighbors
+}
+
+fn build_super_food_ripple_mask(
+    bounds: GridSize,
+    snake_cells: &[bool],
+    center: Option<Position>,
+) -> Option<Vec<bool>> {
+    let center = center?;
+
+    let width = usize::from(bounds.width);
+    let mut mask = vec![false; width * usize::from(bounds.height)];
+
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            if dx == 0 && dy == 0 {
+                continue;
+            }
+
+            let nx = center.x + dx;
+            let ny = center.y + dy;
+            if nx < 0 || ny < 0 || nx >= i32::from(bounds.width) || ny >= i32::from(bounds.height) {
+                continue;
+            }
+
+            let idx = ny as usize * width + nx as usize;
+            if !snake_cells[idx] {
+                mask[idx] = true;
+            }
+        }
+    }
+
+    Some(mask)
+}
+
+fn build_super_food_body_expansion_mask(
+    bounds: GridSize,
+    center: Option<Position>,
+) -> Option<Vec<bool>> {
+    let center = center?;
+    let width = usize::from(bounds.width);
+    let mut mask = vec![false; width * usize::from(bounds.height)];
+
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            let nx = center.x + dx;
+            let ny = center.y + dy;
+            if nx < 0 || ny < 0 || nx >= i32::from(bounds.width) || ny >= i32::from(bounds.height) {
+                continue;
+            }
+
+            let idx = ny as usize * width + nx as usize;
+            mask[idx] = true;
+        }
+    }
+
+    Some(mask)
+}
+
+fn super_food_ripple_center_position(
+    state: &GameState,
+    glow: Option<&GlowEffect>,
+) -> Option<Position> {
+    let effect = glow?;
+    if effect.trigger != GlowTrigger::SuperFoodEaten {
+        return None;
+    }
+
+    let tick_interval = tick_interval_for_speed(state.speed_level).as_secs_f32();
+    if tick_interval <= 0.0 {
+        return None;
+    }
+
+    let snake_cells_per_second = 1.0 / tick_interval;
+    let ripple_speed = snake_cells_per_second * GlowEffect::SUPER_FOOD_RIPPLE_SPEED_MULTIPLIER;
+    let segment_idx = (effect.elapsed().as_secs_f32() * ripple_speed).floor() as usize;
+    let segment_idx = segment_idx.min(state.snake.len().saturating_sub(1));
+    state.snake.segments().nth(segment_idx).copied()
+}
+
+fn tick_interval_for_speed(speed_level: u32) -> std::time::Duration {
+    let speed_penalty_ms = u64::from(speed_level.saturating_sub(1)) * 10;
+    let clamped_ms = DEFAULT_TICK_INTERVAL_MS
+        .saturating_sub(speed_penalty_ms)
+        .max(MIN_TICK_INTERVAL_MS);
+    std::time::Duration::from_millis(clamped_ms)
 }
 
 /// Populates a flat grid of `CellKind` values indexed by `row * width + col`.
@@ -386,28 +560,27 @@ fn composite_half_block(
     bot: CellRender,
     theme: &Theme,
     glow: Option<&GlowEffect>,
-    neighbor_flash_amount: f32,
 ) -> (&'static str, ratatui::style::Color, ratatui::style::Color) {
     let palette = glyphs();
-    let top_bg = apply_neighbor_flash(top.bg, top.neighbor_flash, neighbor_flash_amount);
-    let bot_bg = apply_neighbor_flash(bot.bg, bot.neighbor_flash, neighbor_flash_amount);
+    let top_bg = apply_neighbor_flash(top.bg, top.bg_flash_amount);
+    let bot_bg = apply_neighbor_flash(bot.bg, bot.bg_flash_amount);
 
     match (top.kind, bot.kind) {
         (CellKind::Empty, CellKind::Empty) => (palette.half_upper, top_bg, bot_bg),
         (top_kind, CellKind::Empty) => (
             palette.half_upper,
-            cell_color(top_kind, theme, glow),
+            cell_color(top_kind, theme, glow, top.snake_body_flash_amount),
             bot_bg,
         ),
         (CellKind::Empty, bot_kind) => (
             palette.half_lower,
-            cell_color(bot_kind, theme, glow),
+            cell_color(bot_kind, theme, glow, bot.snake_body_flash_amount),
             top_bg,
         ),
         (top_kind, bot_kind) => (
             palette.half_upper,
-            cell_color(top_kind, theme, glow),
-            cell_color(bot_kind, theme, glow),
+            cell_color(top_kind, theme, glow, top.snake_body_flash_amount),
+            cell_color(bot_kind, theme, glow, bot.snake_body_flash_amount),
         ),
     }
 }
@@ -417,13 +590,23 @@ fn composite_half_block(
 /// Snake body uses alternating 3-segment bands: even bands use the base
 /// `snake_body` color; odd bands have the red channel boosted by 10%.
 /// When a glow effect is active, snake cells are blended toward the glow color.
-fn cell_color(kind: CellKind, theme: &Theme, glow: Option<&GlowEffect>) -> ratatui::style::Color {
+fn cell_color(
+    kind: CellKind,
+    theme: &Theme,
+    glow: Option<&GlowEffect>,
+    snake_body_flash_amount: f32,
+) -> ratatui::style::Color {
     match kind {
         CellKind::SnakeHead => {
             let base = theme.snake_head;
             if let Some(effect) = glow {
-                let glow_color = glow_target_color(effect.trigger);
-                lerp_color(base, glow_color, effect.intensity())
+                match effect.trigger {
+                    GlowTrigger::SpeedLevelUp => {
+                        let glow_color = glow_target_color(effect.trigger, theme);
+                        lerp_color(base, glow_color, effect.intensity())
+                    }
+                    GlowTrigger::SuperFoodEaten => base,
+                }
             } else {
                 base
             }
@@ -436,8 +619,15 @@ fn cell_color(kind: CellKind, theme: &Theme, glow: Option<&GlowEffect>) -> ratat
                 redden_color(theme.snake_body, 0.8)
             };
             if let Some(effect) = glow {
-                let glow_color = glow_target_color(effect.trigger);
-                lerp_color(base, glow_color, effect.intensity())
+                match effect.trigger {
+                    GlowTrigger::SpeedLevelUp => {
+                        let glow_color = glow_target_color(effect.trigger, theme);
+                        lerp_color(base, glow_color, effect.intensity())
+                    }
+                    GlowTrigger::SuperFoodEaten => {
+                        apply_neighbor_flash(base, snake_body_flash_amount)
+                    }
+                }
             } else {
                 base
             }
@@ -445,8 +635,13 @@ fn cell_color(kind: CellKind, theme: &Theme, glow: Option<&GlowEffect>) -> ratat
         CellKind::SnakeTail => {
             let base = theme.snake_tail;
             if let Some(effect) = glow {
-                let glow_color = glow_target_color(effect.trigger);
-                lerp_color(base, glow_color, effect.intensity())
+                match effect.trigger {
+                    GlowTrigger::SpeedLevelUp => {
+                        let glow_color = glow_target_color(effect.trigger, theme);
+                        lerp_color(base, glow_color, effect.intensity())
+                    }
+                    GlowTrigger::SuperFoodEaten => base,
+                }
             } else {
                 base
             }
@@ -458,10 +653,10 @@ fn cell_color(kind: CellKind, theme: &Theme, glow: Option<&GlowEffect>) -> ratat
 }
 
 /// Returns the glow target color for a given trigger type.
-fn glow_target_color(trigger: GlowTrigger) -> ratatui::style::Color {
+fn glow_target_color(trigger: GlowTrigger, theme: &Theme) -> ratatui::style::Color {
     use ratatui::style::Color;
     match trigger {
-        GlowTrigger::SpeedLevelUp => Color::Rgb(200, 255, 255),
+        GlowTrigger::SpeedLevelUp => brighten_color(theme.snake_body, 0.3),
         GlowTrigger::SuperFoodEaten => Color::Rgb(255, 215, 0),
     }
 }
@@ -475,17 +670,21 @@ fn level_up_neighbor_flash_amount(effect: &GlowEffect) -> Option<f32> {
     Some(0.5 * (1.0 - ease_out_cubic(t)))
 }
 
+fn super_food_ripple_flash_amount(effect: &GlowEffect) -> Option<f32> {
+    if effect.trigger != GlowTrigger::SuperFoodEaten {
+        return None;
+    }
+
+    Some(0.3)
+}
+
 fn ease_out_cubic(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     1.0 - (1.0 - t).powi(3)
 }
 
-fn apply_neighbor_flash(
-    color: ratatui::style::Color,
-    enabled: bool,
-    amount: f32,
-) -> ratatui::style::Color {
-    if !enabled || amount <= 0.0 {
+fn apply_neighbor_flash(color: ratatui::style::Color, amount: f32) -> ratatui::style::Color {
+    if amount <= 0.0 {
         return color;
     }
 
