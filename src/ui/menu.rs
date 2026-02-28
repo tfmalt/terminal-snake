@@ -569,7 +569,7 @@ pub fn render_game_over_menu(
     );
     let title_height = match title_mode {
         GameOverTitleMode::FullBlock => FONT_HEIGHT as u16,
-        GameOverTitleMode::MixedNarrow => FONT_HEIGHT as u16 + 1,
+        GameOverTitleMode::MixedNarrow => FONT_HEIGHT as u16 + 2,
         GameOverTitleMode::Plain => 1,
     };
     let popup_height = menu_popup_height(title_height, menu_height).saturating_add(2);
@@ -597,15 +597,20 @@ pub fn render_game_over_menu(
             );
         }
         GameOverTitleMode::MixedNarrow => {
-            let [game_row, over_row] = Layout::vertical([
+            let popup_width = usize::from(popup.width);
+            let over_width = text_width("over");
+            let over_left_col = popup_width.saturating_sub(over_width) / 2;
+            let padded_game = format!("{}GAME", " ".repeat(over_left_col));
+            let [_, game_row, over_row] = Layout::vertical([
+                Constraint::Length(1),
                 Constraint::Length(1),
                 Constraint::Length(FONT_HEIGHT as u16),
             ])
             .areas(title_row);
 
             frame.render_widget(
-                Paragraph::new(Line::from("GAME"))
-                    .alignment(Alignment::Center)
+                Paragraph::new(Line::from(padded_game))
+                    .alignment(Alignment::Left)
                     .style(
                         Style::default()
                             .fg(theme.ui_accent)
