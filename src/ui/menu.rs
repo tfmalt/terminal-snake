@@ -26,6 +26,8 @@ pub fn render_start_menu(
     _high_score: u32,
     theme: &Theme,
     selected_idx: usize,
+    settings_open: bool,
+    settings_selected_idx: usize,
     start_speed_level: u32,
     speed_adjust_mode: bool,
     checkerboard_enabled: bool,
@@ -35,31 +37,38 @@ pub fn render_start_menu(
     // fall back to plain text "TERMINAL" above block-font "SNAKE".
     let full_title_width = text_width("terminal") + 3 + text_width("snake");
     let theme_editing = theme_select.is_some();
-    let body = vec![
-        menu_option_line("Start", selected_idx == 0, theme),
-        menu_option_value_line(
-            "Speed",
-            start_speed_level.to_string(),
-            selected_idx == 1,
-            speed_adjust_mode,
-            theme,
-        ),
-        menu_option_value_line(
-            "Theme",
-            theme.name.to_string(),
-            selected_idx == 2,
-            theme_editing,
-            theme,
-        ),
-        menu_option_value_line(
-            "Grid",
-            if checkerboard_enabled { "On" } else { "Off" }.to_string(),
-            selected_idx == 3,
-            false,
-            theme,
-        ),
-        menu_option_line("Quit", selected_idx == 4, theme),
-    ];
+    let body = if settings_open {
+        vec![
+            menu_option_value_line(
+                "Speed",
+                start_speed_level.to_string(),
+                settings_selected_idx == 0,
+                speed_adjust_mode,
+                theme,
+            ),
+            menu_option_value_line(
+                "Theme",
+                theme.name.to_string(),
+                settings_selected_idx == 1,
+                theme_editing,
+                theme,
+            ),
+            menu_option_value_line(
+                "Grid",
+                if checkerboard_enabled { "On" } else { "Off" }.to_string(),
+                settings_selected_idx == 2,
+                false,
+                theme,
+            ),
+            menu_option_line("Back", settings_selected_idx == 3, theme),
+        ]
+    } else {
+        vec![
+            menu_option_line("Start", selected_idx == 0, theme),
+            menu_option_line("Settings", selected_idx == 1, theme),
+            menu_option_line("Quit", selected_idx == 2, theme),
+        ]
+    };
     let menu_height = u16::try_from(body.len()).unwrap_or(u16::MAX);
 
     // Start layout decision is based on content width at the target popup width.
@@ -212,7 +221,13 @@ pub fn render_start_menu(
         }
     }
 
-    let menu_width = start_menu_content_width(theme, start_speed_level).saturating_add(2);
+    let menu_width = start_menu_content_width(
+        theme,
+        start_speed_level,
+        checkerboard_enabled,
+        settings_open,
+    )
+    .saturating_add(2);
     let menu_area = centered_rect_with_max_width(body_row, menu_width);
     frame.render_widget(
         Paragraph::new(body)
@@ -226,11 +241,11 @@ pub fn render_start_menu(
     // whatever character was already rendered there. Because ratatui redraws the
     // entire frame every tick the source data is never mutated — the overlay is
     // ephemeral and non-destructive.
-    if speed_adjust_mode {
+    if speed_adjust_mode && settings_open {
         // "> Speed:  " = 2 (prefix) + 5 (label) + 3 (":  ") = 10 chars before value.
         let value_x = menu_area.x.saturating_add(10);
-        // Speed is body line index 1, so its terminal row is menu_area.y + 1.
-        let speed_y = menu_area.y.saturating_add(1);
+        // In settings submenu, Speed is body line index 0.
+        let speed_y = menu_area.y;
         let indicator_style = Style::default()
             .fg(theme.ui_accent)
             .bg(theme.ui_bg)
@@ -260,6 +275,8 @@ pub fn render_start_menu(
         "↑↓ adjusts speed   Enter/Esc to confirm"
     } else if theme_editing {
         "↑↓ cycles theme   Enter/Esc to confirm"
+    } else if settings_open {
+        "↑↓ navigate   Enter/→ select   Esc/← back"
     } else {
         "↑↓ navigate   Enter/→ select"
     };
@@ -749,14 +766,27 @@ fn snake_only_title_lines(theme: &Theme) -> Vec<Line<'static>> {
         .collect()
 }
 
-fn start_menu_content_width(theme: &Theme, start_speed_level: u32) -> u16 {
-    let labels = [
-        "Start".to_string(),
-        format!("Speed:  {start_speed_level}"),
-        format!("Theme:  {}", theme.name),
-        "Grid:  Off".to_string(),
-        "Quit".to_string(),
-    ];
+fn start_menu_content_width(
+    theme: &Theme,
+    start_speed_level: u32,
+    checkerboard_enabled: bool,
+    settings_open: bool,
+) -> u16 {
+    let labels = if settings_open {
+        [
+            format!("Speed:  {start_speed_level}"),
+            format!("Theme:  {}", theme.name),
+            format!("Grid:  {}", if checkerboard_enabled { "On" } else { "Off" }),
+            "Back".to_string(),
+        ]
+    } else {
+        [
+            "Start".to_string(),
+            "Settings".to_string(),
+            "Quit".to_string(),
+            String::new(),
+        ]
+    };
 
     let widest = labels
         .iter()

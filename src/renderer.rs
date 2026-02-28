@@ -13,6 +13,8 @@ use crate::ui::menu::{
 
 pub struct MenuUiState<'a> {
     pub start_selected_idx: usize,
+    pub start_settings_open: bool,
+    pub start_settings_selected_idx: usize,
     pub start_speed_level: u32,
     /// Whether the speed-adjust sub-mode is active (Up/Down changes speed value).
     pub start_speed_adjust_mode: bool,
@@ -60,7 +62,13 @@ pub fn render(
     );
     render_play_area_hud_margin(frame, play_area, gameplay_area, theme);
 
-    render_play_area(frame, gameplay_area, state, theme, menu_ui.checkerboard_enabled);
+    render_play_area(
+        frame,
+        gameplay_area,
+        state,
+        theme,
+        menu_ui.checkerboard_enabled,
+    );
 
     if state.is_start_screen() {
         render_start_menu(
@@ -69,6 +77,8 @@ pub fn render(
             hud_info.high_score,
             hud_info.theme,
             menu_ui.start_selected_idx,
+            menu_ui.start_settings_open,
+            menu_ui.start_settings_selected_idx,
             menu_ui.start_speed_level,
             menu_ui.start_speed_adjust_mode,
             menu_ui.checkerboard_enabled,
@@ -260,12 +270,16 @@ fn composite_half_block(
 
     match (top, bot) {
         (CellKind::Empty, CellKind::Empty) => (palette.half_upper, top_bg, bot_bg),
-        (top_kind, CellKind::Empty) => {
-            (palette.half_upper, cell_color(top_kind, theme, glow), bot_bg)
-        }
-        (CellKind::Empty, bot_kind) => {
-            (palette.half_lower, cell_color(bot_kind, theme, glow), top_bg)
-        }
+        (top_kind, CellKind::Empty) => (
+            palette.half_upper,
+            cell_color(top_kind, theme, glow),
+            bot_bg,
+        ),
+        (CellKind::Empty, bot_kind) => (
+            palette.half_lower,
+            cell_color(bot_kind, theme, glow),
+            top_bg,
+        ),
         (top_kind, bot_kind) => (
             palette.half_upper,
             cell_color(top_kind, theme, glow),

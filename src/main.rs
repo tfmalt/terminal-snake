@@ -27,12 +27,16 @@ enum ThemeSelectionMode {
     PauseMenu,
 }
 
-const START_MENU_ITEM_COUNT: usize = 5;
+const START_MENU_ITEM_COUNT: usize = 3;
 const START_MENU_START_IDX: usize = 0;
-const START_MENU_SPEED_IDX: usize = 1;
-const START_MENU_THEME_IDX: usize = 2;
-const START_MENU_GRID_IDX: usize = 3;
-const START_MENU_QUIT_IDX: usize = 4;
+const START_MENU_SETTINGS_IDX: usize = 1;
+const START_MENU_QUIT_IDX: usize = 2;
+
+const START_SETTINGS_ITEM_COUNT: usize = 4;
+const START_SETTINGS_SPEED_IDX: usize = 0;
+const START_SETTINGS_THEME_IDX: usize = 1;
+const START_SETTINGS_GRID_IDX: usize = 2;
+const START_SETTINGS_BACK_IDX: usize = 3;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -99,6 +103,8 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
     let mut start_menu_selected_idx = 0usize;
     let mut pause_menu_selected_idx = 0usize;
     let mut game_over_menu_selected_idx = 0usize;
+    let mut start_settings_open = false;
+    let mut start_settings_selected_idx = 0usize;
     let mut theme_selection_mode: Option<ThemeSelectionMode> = None;
     let mut checkerboard_enabled = !cli.no_checkerboard;
     let mut start_speed_adjust_mode = false;
@@ -155,6 +161,8 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 },
                 MenuUiState {
                     start_selected_idx: start_menu_selected_idx,
+                    start_settings_open,
+                    start_settings_selected_idx,
                     start_speed_level,
                     start_speed_adjust_mode,
                     checkerboard_enabled,
@@ -230,6 +238,42 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                     continue;
                 }
 
+                if start_settings_open {
+                    match game_input {
+                        GameInput::Direction(Direction::Up) => {
+                            start_settings_selected_idx =
+                                wrap_prev(start_settings_selected_idx, START_SETTINGS_ITEM_COUNT);
+                        }
+                        GameInput::Direction(Direction::Down) => {
+                            start_settings_selected_idx =
+                                wrap_next(start_settings_selected_idx, START_SETTINGS_ITEM_COUNT);
+                        }
+                        GameInput::Confirm | GameInput::Direction(Direction::Right) => {
+                            match start_settings_selected_idx {
+                                START_SETTINGS_SPEED_IDX => {
+                                    start_speed_adjust_mode = true;
+                                }
+                                START_SETTINGS_THEME_IDX => {
+                                    theme_selection_mode = Some(ThemeSelectionMode::StartMenu)
+                                }
+                                START_SETTINGS_GRID_IDX => {
+                                    checkerboard_enabled = !checkerboard_enabled;
+                                }
+                                START_SETTINGS_BACK_IDX => {
+                                    start_settings_open = false;
+                                }
+                                _ => {}
+                            }
+                        }
+                        GameInput::Direction(Direction::Left) | GameInput::Pause => {
+                            start_settings_open = false;
+                        }
+                        _ => {}
+                    }
+
+                    continue;
+                }
+
                 match game_input {
                     GameInput::Direction(Direction::Up) => {
                         start_menu_selected_idx =
@@ -245,14 +289,9 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                                 state = GameState::new_with_options(bounds, start_speed_level);
                                 state.status = GameStatus::Playing;
                             }
-                            START_MENU_SPEED_IDX => {
-                                start_speed_adjust_mode = true;
-                            }
-                            START_MENU_THEME_IDX => {
-                                theme_selection_mode = Some(ThemeSelectionMode::StartMenu)
-                            }
-                            START_MENU_GRID_IDX => {
-                                checkerboard_enabled = !checkerboard_enabled;
+                            START_MENU_SETTINGS_IDX => {
+                                start_settings_open = true;
+                                start_settings_selected_idx = 0;
                             }
                             START_MENU_QUIT_IDX => {
                                 persist_selected_theme_if_dirty(
@@ -372,6 +411,8 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 game_over_menu_selected_idx = 0;
                 theme_selection_mode = None;
                 start_speed_adjust_mode = false;
+                start_settings_open = false;
+                start_settings_selected_idx = 0;
 
                 if state.score > high_score {
                     high_score = state.score;
@@ -384,11 +425,13 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
             if state.status == GameStatus::Paused && !state.is_start_screen() {
                 pause_menu_selected_idx = 0;
                 start_speed_adjust_mode = false;
+                start_settings_open = false;
             }
 
             if state.status == GameStatus::Playing {
                 theme_selection_mode = None;
                 start_speed_adjust_mode = false;
+                start_settings_open = false;
             }
 
             last_status = state.status;
