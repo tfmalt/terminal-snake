@@ -1,6 +1,6 @@
 [package]
 name = "terminal-snake"
-version = "0.8.10"
+version = "0.8.11"
 edition = "2024"
 description = "Retro cross-platform terminal Snake game in Rust"
 license = "MIT"
