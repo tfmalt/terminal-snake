@@ -1,17 +1,20 @@
 use std::time::{Duration, Instant};
 
-use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
+use ratatui::Frame;
 
-use crate::config::{GLYPH_MARKER_SQUARE, HUD_BOTTOM_MARGIN_Y, PLAY_AREA_MARGIN_X, Theme, glyphs};
+use crate::config::{glyphs, Theme, GLYPH_MARKER_SQUARE, HUD_BOTTOM_MARGIN_Y, PLAY_AREA_MARGIN_X};
 use crate::game::GameState;
 use crate::platform::Platform;
 
 const HUD_INNER_MARGIN_X: u16 = 1;
-const VALUE_FLASH_DURATION: Duration = Duration::from_secs(1);
+const VALUE_FLASH_HOLD_DURATION: Duration = Duration::from_secs(1);
+const VALUE_FLASH_FADE_DURATION: Duration = Duration::from_secs(2);
+const VALUE_FLASH_DURATION: Duration =
+    Duration::from_secs(VALUE_FLASH_HOLD_DURATION.as_secs() + VALUE_FLASH_FADE_DURATION.as_secs());
 
 /// Per-value flash timestamps for HUD value transitions.
 #[derive(Debug, Clone, Copy, Default)]
@@ -53,13 +56,7 @@ pub fn render_hud(
     info: &HudInfo<'_>,
 ) -> Rect {
     let debug_height = u16::from(info.debug);
-    let [
-        play_area,
-        score_area,
-        status_area,
-        debug_area,
-        bottom_margin,
-    ] = Layout::vertical([
+    let [play_area, score_area, status_area, debug_area, bottom_margin] = Layout::vertical([
         Constraint::Min(0),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -358,7 +355,12 @@ fn flash_color(base: Color, accent: Color, changed_at: Option<Instant>, now: Ins
     if elapsed >= VALUE_FLASH_DURATION {
         return base;
     }
-    let t = elapsed.as_secs_f32() / VALUE_FLASH_DURATION.as_secs_f32();
+    if elapsed <= VALUE_FLASH_HOLD_DURATION {
+        return accent;
+    }
+
+    let fade_elapsed = elapsed - VALUE_FLASH_HOLD_DURATION;
+    let t = fade_elapsed.as_secs_f32() / VALUE_FLASH_FADE_DURATION.as_secs_f32();
     blend_color(accent, base, ease_out_cubic(t))
 }
 
