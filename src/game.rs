@@ -116,7 +116,7 @@ pub struct FoodDensity {
 }
 
 const COVERAGE_BONUS_RATE: f64 = 0.10;
-const COVERAGE_BONUS_CAP: f64 = 2.0;
+const COVERAGE_BONUS_CAP: f64 = 9.0;
 
 /// Returns the default food density configuration.
 #[must_use]
@@ -757,7 +757,10 @@ mod tests {
     fn coverage_bonus_is_capped() {
         let base_points = 10;
         let points = super::score_with_coverage_bonus(base_points, 100.0);
-        assert_eq!(points, 30, "bonus cap of 2.0 should limit total to 3x base");
+        assert_eq!(
+            points, 100,
+            "bonus cap of 9.0 should limit total to 10x base"
+        );
     }
 
     #[test]
