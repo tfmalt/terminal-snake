@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use crate::config::{GLYPH_MARKER_SQUARE, HUD_BOTTOM_MARGIN_Y, PLAY_AREA_MARGIN_X, Theme, glyphs};
-use crate::game::{GameState, GameStatus};
+use crate::game::GameState;
 use crate::platform::Platform;
 
 const HUD_INNER_MARGIN_X: u16 = 1;
@@ -28,7 +28,7 @@ pub fn render_hud(
     frame: &mut Frame<'_>,
     area: Rect,
     state: &GameState,
-    platform: Platform,
+    _platform: Platform,
     info: &HudInfo<'_>,
 ) -> Rect {
     let debug_height = u16::from(info.debug);
@@ -100,34 +100,27 @@ pub fn render_hud(
     // Status line: game state label
     let dimensions_text = format!("{}x{}", state.bounds().width, state.bounds().height);
     let food_count_text = state.calculated_food_count().to_string();
-    let [_, status_center, status_right] = Layout::horizontal([
-        Constraint::Percentage(25),
-        Constraint::Percentage(50),
-        Constraint::Percentage(25),
-    ])
-    .areas(status_area);
-
-    frame.render_widget(
-        Paragraph::new(Line::from(status_label(state, platform)))
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::DarkGray)),
-        status_center,
-    );
+    let coverage_text = format!("{:.2}", state.play_area_coverage_percent());
     frame.render_widget(
         Paragraph::new(bottom_info_line(
             dimensions_text.as_str(),
             food_count_text.as_str(),
+            coverage_text.as_str(),
             info.theme.food,
         ))
         .alignment(Alignment::Right)
         .style(Style::default().fg(Color::DarkGray)),
-        status_right,
+        status_area,
     );
 
     if info.debug {
         frame.render_widget(Paragraph::new("").style(hud_bg), debug_band);
-        let debug_width = bottom_info_width(dimensions_text.as_str(), food_count_text.as_str())
-            .min(u16::MAX as usize) as u16;
+        let debug_width = bottom_info_width(
+            dimensions_text.as_str(),
+            food_count_text.as_str(),
+            coverage_text.as_str(),
+        )
+        .min(u16::MAX as usize) as u16;
         let [debug_left, debug_right] =
             Layout::horizontal([Constraint::Min(0), Constraint::Length(debug_width)])
                 .areas(debug_area);
@@ -142,6 +135,7 @@ pub fn render_hud(
             Paragraph::new(bottom_info_line(
                 dimensions_text.as_str(),
                 food_count_text.as_str(),
+                coverage_text.as_str(),
                 info.theme.food,
             ))
             .alignment(Alignment::Right)
@@ -178,39 +172,26 @@ fn render_hud_bottom_margin(frame: &mut Frame<'_>, bottom_margin: Rect, theme: &
     }
 }
 
-fn status_label(state: &GameState, platform: Platform) -> &'static str {
-    match state.status {
-        GameStatus::Paused if state.is_start_screen() => {
-            if platform.is_wsl() {
-                "snake (wsl)"
-            } else {
-                "snake"
-            }
-        }
-        GameStatus::Playing => {
-            if platform.is_wsl() {
-                "snake (wsl)"
-            } else {
-                "snake"
-            }
-        }
-        GameStatus::Paused => "paused",
-        GameStatus::GameOver => "game over",
-        GameStatus::Victory => "victory",
-    }
-}
-
 fn left_style(theme: &Theme) -> Style {
     Style::default()
         .fg(theme.ui_text)
         .add_modifier(Modifier::BOLD)
 }
 
-fn bottom_info_line<'a>(dimensions: &'a str, food_count: &'a str, food_color: Color) -> Line<'a> {
+fn bottom_info_line<'a>(
+    dimensions: &'a str,
+    food_count: &'a str,
+    coverage: &'a str,
+    food_color: Color,
+) -> Line<'a> {
+    let sep = format!(" {} ", glyphs().table_separator);
     Line::from(vec![
-        Span::raw(format!("{dimensions}  ")),
+        Span::raw(dimensions.to_string()),
+        Span::raw(sep.clone()),
         Span::styled(food_count_marker(), Style::default().fg(food_color)),
         Span::raw(format!(" = {food_count}")),
+        Span::raw(sep),
+        Span::raw(format!("{coverage}%")),
     ])
 }
 
@@ -222,6 +203,14 @@ fn food_count_marker() -> &'static str {
     }
 }
 
-fn bottom_info_width(dimensions: &str, food_count: &str) -> usize {
-    dimensions.chars().count() + 2 + 1 + 3 + food_count.chars().count()
+fn bottom_info_width(dimensions: &str, food_count: &str, coverage: &str) -> usize {
+    // {dimensions} │ ■ = {food_count} │ {coverage}%
+    dimensions.chars().count()
+        + 3 // " │ "
+        + 1 // marker
+        + 3 // " = "
+        + food_count.chars().count()
+        + 3 // " │ "
+        + coverage.chars().count()
+        + 1 // "%"
 }

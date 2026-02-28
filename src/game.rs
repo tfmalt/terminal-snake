@@ -360,6 +360,17 @@ impl GameState {
         desired_food_count(self.bounds, self.snake.len(), self.food_density)
     }
 
+    /// Returns the snake coverage of the full play area as a percentage.
+    #[must_use]
+    pub fn play_area_coverage_percent(&self) -> f64 {
+        let total_cells = self.bounds.total_cells();
+        if total_cells == 0 {
+            return 0.0;
+        }
+
+        (self.snake.len() as f64 / total_cells as f64) * 100.0
+    }
+
     fn sync_food_count_to_density(&mut self) {
         let target_count = desired_food_count(self.bounds, self.snake.len(), self.food_density);
 
@@ -639,5 +650,20 @@ mod tests {
         state.tick();
 
         assert_eq!(state.score, 3, "score should be 1 * speed_level(3)");
+    }
+
+    #[test]
+    fn coverage_percent_uses_snake_length_over_total_cells() {
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 20,
+                height: 20,
+            },
+            12,
+        );
+        state.snake = Snake::new(Position { x: 2, y: 2 }, Direction::Right);
+
+        // Initial snake length is 2 on a 400-cell board: 0.50%
+        assert!((state.play_area_coverage_percent() - 0.5).abs() < f64::EPSILON);
     }
 }
