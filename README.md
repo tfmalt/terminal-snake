@@ -24,6 +24,20 @@ brew install tfmalt/tap/terminal-snake
 # brew install terminal-snake
 ```
 
+For maintainers, update formula release/tag + checksums with:
+
+```bash
+./scripts/update-homebrew-formula.py
+```
+
+To update both this repo copy and a local tap checkout in one run:
+
+```bash
+./scripts/update-homebrew-formula.py \
+  --formula packaging/homebrew/terminal-snake.rb \
+  --formula ../homebrew-tap/Formula/terminal-snake.rb
+```
+
 ### Prebuilt binaries (Linux/macOS/Windows)
 
 Download the archive for your platform from GitHub Releases:
@@ -79,10 +93,31 @@ CLI options:
 ```
 Options:
       --speed <SPEED>    Starting speed level [default: 1]
+      --resume <RESUME>  Resume a saved session by hash
+      --resume-list      List saved resumable sessions and exit
       --debug            Show diagnostic debug line at the bottom of the screen
       --ascii-glyphs     Use an ASCII-safe glyph palette for poor font environments
   -h, --help             Print help
 ```
+
+When you quit mid-game, terminal-snake saves a resumable snapshot locally,
+prints the resume hash, and shows the command to continue:
+
+```bash
+terminal-snake --resume <HASH>
+```
+
+To see all saved sessions and their hashes:
+
+```bash
+terminal-snake --resume-list
+```
+
+Multiple in-progress sessions are supported and stored in:
+
+- macOS: `~/Library/Application Support/terminal-snake/sessions.json`
+- Linux: `~/.local/share/terminal-snake/sessions.json` (or `$XDG_DATA_HOME/...`)
+- Windows: `%LOCALAPPDATA%\terminal-snake\sessions.json`
 
 ## Features
 

@@ -1,17 +1,18 @@
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 use crate::config::GridSize;
 use crate::snake::{Position, Snake};
 
 /// Distinguishes normal food from time-limited super food.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub enum FoodKind {
     Normal,
     Super { ticks_remaining: u32 },
 }
 
 /// Food entity currently active on the board.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Food {
     pub position: Position,
     pub kind: FoodKind,
@@ -43,7 +44,7 @@ impl Food {
     pub fn points(self) -> u32 {
         match self.kind {
             FoodKind::Normal => 1,
-            FoodKind::Super { .. } => 5,
+            FoodKind::Super { .. } => 10,
         }
     }
 
@@ -113,13 +114,13 @@ pub fn spawn_position<R: Rng + ?Sized>(
 
 #[cfg(test)]
 mod tests {
-    use rand::SeedableRng;
     use rand::rngs::StdRng;
+    use rand::SeedableRng;
 
     use crate::config::GridSize;
     use crate::input::Direction;
 
-    use super::{Food, spawn_position};
+    use super::{spawn_position, Food};
     use crate::snake::{Position, Snake};
 
     #[test]
@@ -176,9 +177,9 @@ mod tests {
     }
 
     #[test]
-    fn super_food_grants_five_points() {
+    fn super_food_grants_ten_points() {
         let food = Food::new_super(Position { x: 1, y: 1 }, 10);
-        assert_eq!(food.points(), 5);
+        assert_eq!(food.points(), 10);
         assert_eq!(food.growth(), 5);
         assert!(food.is_super());
     }

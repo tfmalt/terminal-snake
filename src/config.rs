@@ -1,11 +1,12 @@
 use ratatui::style::Color;
+use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
 /// Logical grid dimensions passed through the game as a named type.
 ///
 /// Replaces the anonymous `(u16, u16)` tuple that was used for bounds,
 /// making width vs. height unambiguous at every call site.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GridSize {
     pub width: u16,
     pub height: u16,
@@ -95,6 +96,18 @@ pub const GLYPH_HALF_UPPER: &str = "▀";
 /// Lower half-block glyph for compositing.
 pub const GLYPH_HALF_LOWER: &str = "▄";
 
+/// Upper one-eighth block glyph used for subtle top-half overlays.
+pub const GLYPH_UPPER_EIGHTH: &str = "▔";
+
+/// Lower one-eighth block glyph used for subtle bottom-half overlays.
+pub const GLYPH_LOWER_EIGHTH: &str = "▁";
+
+/// Lower one-quarter block glyph used for medium-intensity bottom overlays.
+pub const GLYPH_LOWER_QUARTER: &str = "▂";
+
+/// Lower three-eighths block glyph used for stronger bottom overlays.
+pub const GLYPH_LOWER_THREE_EIGHTHS: &str = "▃";
+
 /// Up indicator used in start menu speed controls.
 pub const GLYPH_INDICATOR_UP: &str = "▲";
 
@@ -103,6 +116,21 @@ pub const GLYPH_INDICATOR_DOWN: &str = "▼";
 
 /// Filled square marker used in HUD counters.
 pub const GLYPH_MARKER_SQUARE: &str = "■";
+
+/// Top border glyph for the play area boundary.
+pub const GLYPH_BORDER_TOP: &str = "▁";
+
+/// Bottom border glyph for the play area boundary.
+pub const GLYPH_BORDER_BOTTOM: &str = "▔";
+
+/// Left border glyph for the play area boundary.
+pub const GLYPH_BORDER_LEFT: &str = "▕";
+
+/// Right border glyph for the play area boundary.
+pub const GLYPH_BORDER_RIGHT: &str = "▏";
+
+/// Side length (in game cells) of each checkerboard tile.
+pub const CHECKER_TILE_SIZE: usize = 6;
 
 /// Runtime-selected glyph mode.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -116,6 +144,10 @@ pub enum GlyphMode {
 pub struct GlyphPalette {
     pub half_upper: &'static str,
     pub half_lower: &'static str,
+    pub upper_eighth: &'static str,
+    pub lower_eighth: &'static str,
+    pub lower_quarter: &'static str,
+    pub lower_three_eighths: &'static str,
     pub solid: &'static str,
     pub table_separator: &'static str,
 }
@@ -149,12 +181,20 @@ pub fn configure_glyphs(mode: GlyphMode) {
         GlyphMode::Unicode => GlyphPalette {
             half_upper: GLYPH_HALF_UPPER,
             half_lower: GLYPH_HALF_LOWER,
+            upper_eighth: GLYPH_UPPER_EIGHTH,
+            lower_eighth: GLYPH_LOWER_EIGHTH,
+            lower_quarter: GLYPH_LOWER_QUARTER,
+            lower_three_eighths: GLYPH_LOWER_THREE_EIGHTHS,
             solid: "█",
             table_separator: "│",
         },
         GlyphMode::Ascii => GlyphPalette {
             half_upper: "#",
             half_lower: "#",
+            upper_eighth: "#",
+            lower_eighth: "#",
+            lower_quarter: "#",
+            lower_three_eighths: "#",
             solid: "#",
             table_separator: "|",
         },
@@ -167,6 +207,10 @@ pub fn glyphs() -> &'static GlyphPalette {
     GLYPH_PALETTE.get_or_init(|| GlyphPalette {
         half_upper: GLYPH_HALF_UPPER,
         half_lower: GLYPH_HALF_LOWER,
+        upper_eighth: GLYPH_UPPER_EIGHTH,
+        lower_eighth: GLYPH_LOWER_EIGHTH,
+        lower_quarter: GLYPH_LOWER_QUARTER,
+        lower_three_eighths: GLYPH_LOWER_THREE_EIGHTHS,
         solid: "█",
         table_separator: "│",
     })

@@ -1,14 +1,14 @@
-use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
+use ratatui::Frame;
 use std::time::Duration;
 
-use crate::block_font::{FONT_HEIGHT, render_text, text_width};
+use crate::block_font::{render_text, text_width, FONT_HEIGHT};
 use crate::config::{
-    GLYPH_INDICATOR_DOWN, GLYPH_INDICATOR_UP, MAX_START_SPEED_LEVEL, MIN_START_SPEED_LEVEL, Theme,
-    glyphs,
+    glyphs, Theme, GLYPH_INDICATOR_DOWN, GLYPH_INDICATOR_UP, MAX_START_SPEED_LEVEL,
+    MIN_START_SPEED_LEVEL,
 };
 use crate::game::DeathReason;
 use crate::theme::ThemeItem;
@@ -48,6 +48,7 @@ pub fn render_start_menu(
     speed_adjust_mode: bool,
     checkerboard_enabled: bool,
     game_border_enabled: bool,
+    has_active_session: bool,
     theme_select: Option<ThemeSelectView<'_>>,
 ) {
     // Breakpoints:
@@ -94,11 +95,17 @@ pub fn render_start_menu(
             menu_option_line("Back", settings_selected_idx == 4, theme),
         ]
     } else {
-        vec![
-            menu_option_line("Start", selected_idx == 0, theme),
-            menu_option_line("Settings", selected_idx == 1, theme),
-            menu_option_line("Quit", selected_idx == 2, theme),
-        ]
+        let labels: &[&str] = if has_active_session {
+            &["Resume", "Start", "Settings", "Quit"]
+        } else {
+            &["Start", "Settings", "Quit"]
+        };
+
+        labels
+            .iter()
+            .enumerate()
+            .map(|(idx, label)| menu_option_line(*label, selected_idx == idx, theme))
+            .collect()
     };
 
     if play_area_too_small {
@@ -327,6 +334,7 @@ pub fn render_start_menu(
         checkerboard_enabled,
         game_border_enabled,
         settings_open,
+        has_active_session,
     )
     .saturating_add(2);
     let menu_area = if play_area_too_small {
@@ -393,9 +401,13 @@ pub fn render_start_menu(
     );
 
     frame.render_widget(
-        Paragraph::new(Line::from("Copyright (c) 2026 Thomas Malt"))
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(theme.ui_muted).bg(theme.ui_bg)),
+        Paragraph::new(Line::from(concat!(
+            "Copyright (c) ",
+            env!("BUILD_YEAR"),
+            " Thomas Malt"
+        )))
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(theme.ui_muted).bg(theme.ui_bg)),
         copyright_row,
     );
 
@@ -963,7 +975,7 @@ fn start_screen_title_lines(theme: &Theme) -> Vec<Line<'static>> {
                 Span::styled(
                     snake_row,
                     Style::default()
-                        .fg(theme.ui_text)
+                        .fg(theme.snake_body)
                         .add_modifier(Modifier::BOLD),
                 ),
             ])
@@ -980,7 +992,7 @@ fn snake_only_title_lines(theme: &Theme) -> Vec<Line<'static>> {
             Line::from(Span::styled(
                 row,
                 Style::default()
-                    .fg(theme.ui_text)
+                    .fg(theme.snake_body)
                     .add_modifier(Modifier::BOLD),
             ))
         })
@@ -1021,6 +1033,7 @@ fn start_menu_content_width(
     checkerboard_enabled: bool,
     game_border_enabled: bool,
     settings_open: bool,
+    has_active_session: bool,
 ) -> u16 {
     const VALUE_LABEL_WIDTH: usize = 6;
     let labels = if settings_open {
@@ -1041,7 +1054,12 @@ fn start_menu_content_width(
         ]
     } else {
         [
-            "Start".to_string(),
+            (if has_active_session {
+                "Resume"
+            } else {
+                "Start"
+            })
+            .to_string(),
             "Settings".to_string(),
             "Quit".to_string(),
             String::new(),
@@ -1312,7 +1330,7 @@ fn longest_theme_name_width(themes: &[ThemeItem]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        GameOverTitleMode, StartTitleMode, choose_game_over_title_mode, choose_start_title_mode,
+        choose_game_over_title_mode, choose_start_title_mode, GameOverTitleMode, StartTitleMode,
     };
     use crate::block_font::text_width;
 

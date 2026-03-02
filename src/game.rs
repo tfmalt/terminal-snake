@@ -1,7 +1,9 @@
-use rand::Rng;
+use rand::RngCore;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
+use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
+use thiserror::Error;
 
 use crate::config::{
     DEFAULT_TICK_INTERVAL_MS, FOOD_PER_SPEED_LEVEL, GridSize, MAX_START_SPEED_LEVEL,
@@ -12,7 +14,7 @@ use crate::input::GameInput;
 use crate::snake::{Position, Snake};
 
 /// Current high-level gameplay state.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub enum GameStatus {
     Playing,
     Paused,
@@ -21,14 +23,14 @@ pub enum GameStatus {
 }
 
 /// Why the most recent game-over state was reached.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub enum DeathReason {
     WallCollision,
     SelfCollision,
 }
 
 /// What triggered a glow effect on the snake.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub enum GlowTrigger {
     SpeedLevelUp,
     SuperFoodEaten,
@@ -44,6 +46,8 @@ pub struct GlowEffect {
 
 impl GlowEffect {
     const SPEED_LEVEL_UP_DURATION: Duration = Duration::from_secs(3);
+    const SUPER_FOOD_MIN_DURATION_SECONDS: f32 = 0.45;
+    const SUPER_FOOD_MAX_DURATION_SECONDS: f32 = 1.8;
     pub const SUPER_FOOD_RIPPLE_SPEED_MULTIPLIER: f32 = 5.0;
 
     /// Creates a speed-level glow effect.
@@ -120,7 +124,11 @@ impl GlowEffect {
         let body_len = snake_len.max(1) as f32;
         let traversal_seconds = body_len / ripple_cells_per_second;
         let padded_seconds = traversal_seconds + tick_seconds;
-        Duration::from_secs_f32(padded_seconds.max(0.001))
+        let clamped_seconds = padded_seconds.clamp(
+            Self::SUPER_FOOD_MIN_DURATION_SECONDS,
+            Self::SUPER_FOOD_MAX_DURATION_SECONDS,
+        );
+        Duration::from_secs_f32(clamped_seconds)
     }
 }
 
@@ -147,11 +155,13 @@ pub struct GameState {
     bounds: GridSize,
     base_speed_level: u32,
     food_density: FoodDensity,
+    rng_seed: u64,
+    rng_draws: u64,
     rng: StdRng,
 }
 
 /// Configures food density as `foods_per` cells_per cells.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FoodDensity {
     pub foods_per: usize,
     pub cells_per: usize,
@@ -167,6 +177,59 @@ pub fn default_food_density() -> FoodDensity {
         foods_per: 1,
         cells_per: 200,
     }
+}
+
+/// Serializable game snapshot used for local resume.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameSnapshotV1 {
+    pub bounds: GridSize,
+    pub snake: SnakeSnapshotV1,
+    pub foods: Vec<Food>,
+    pub score: u32,
+    pub speed_level: u32,
+    pub tick_count: u64,
+    pub status: GameStatus,
+    pub death_reason: Option<DeathReason>,
+    pub elapsed_millis: u64,
+    pub base_speed_level: u32,
+    pub food_density: FoodDensity,
+    pub rng: RngSnapshotV1,
+}
+
+/// Serializable snake snapshot used by [`GameSnapshotV1`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnakeSnapshotV1 {
+    pub segments: Vec<Position>,
+    pub direction: crate::input::Direction,
+    pub buffered_direction: crate::input::Direction,
+    pub next_buffered_direction: Option<crate::input::Direction>,
+    pub grow_remaining: u32,
+}
+
+/// Serializable RNG state needed for deterministic resume.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct RngSnapshotV1 {
+    pub seed: u64,
+    pub draws: u64,
+}
+
+/// Snapshot restore failures.
+#[derive(Debug, Error)]
+pub enum SnapshotRestoreError {
+    #[error("snapshot must contain at least one snake segment")]
+    EmptySnake,
+    #[error("snapshot contains snake segment out of bounds")]
+    SnakeOutOfBounds,
+    #[error("snapshot contains food out of bounds")]
+    FoodOutOfBounds,
+    #[error("snapshot contains duplicate food positions")]
+    DuplicateFood,
+    #[error("snapshot food overlaps snake")]
+    FoodOverlapsSnake,
+    #[error("snapshot has non-resumable status {0:?}")]
+    NonResumableStatus(GameStatus),
+    #[error("snapshot contains invalid snake data")]
+    InvalidSnake,
 }
 
 impl GameState {
@@ -233,6 +296,8 @@ impl GameState {
             bounds,
             base_speed_level,
             food_density: normalized_density,
+            rng_seed: seed,
+            rng_draws: 0,
             rng,
         };
 
@@ -408,6 +473,117 @@ impl GameState {
         self.bounds
     }
 
+    /// Captures a deterministic snapshot that can be restored later.
+    #[must_use]
+    pub fn to_snapshot_v1(&self) -> GameSnapshotV1 {
+        GameSnapshotV1 {
+            bounds: self.bounds,
+            snake: SnakeSnapshotV1 {
+                segments: self.snake.segments().copied().collect(),
+                direction: self.snake.direction(),
+                buffered_direction: self.snake.buffered_direction(),
+                next_buffered_direction: self.snake.next_buffered_direction(),
+                grow_remaining: self.snake.grow_remaining(),
+            },
+            foods: self.foods.clone(),
+            score: self.score,
+            speed_level: self.speed_level,
+            tick_count: self.tick_count,
+            status: self.status,
+            death_reason: self.death_reason,
+            elapsed_millis: self.elapsed_millis,
+            base_speed_level: self.base_speed_level,
+            food_density: self.food_density,
+            rng: RngSnapshotV1 {
+                seed: self.rng_seed,
+                draws: self.rng_draws,
+            },
+        }
+    }
+
+    /// Restores game state from a previously captured snapshot.
+    pub fn from_snapshot_v1(snapshot: GameSnapshotV1) -> Result<Self, SnapshotRestoreError> {
+        if snapshot.snake.segments.is_empty() {
+            return Err(SnapshotRestoreError::EmptySnake);
+        }
+
+        if !matches!(snapshot.status, GameStatus::Playing | GameStatus::Paused) {
+            return Err(SnapshotRestoreError::NonResumableStatus(snapshot.status));
+        }
+
+        if snapshot
+            .snake
+            .segments
+            .iter()
+            .any(|segment| !segment.is_within_bounds(snapshot.bounds))
+        {
+            return Err(SnapshotRestoreError::SnakeOutOfBounds);
+        }
+
+        if snapshot
+            .foods
+            .iter()
+            .any(|food| !food.position.is_within_bounds(snapshot.bounds))
+        {
+            return Err(SnapshotRestoreError::FoodOutOfBounds);
+        }
+
+        let mut seen_food_positions =
+            std::collections::HashSet::with_capacity(snapshot.foods.len());
+        for food in &snapshot.foods {
+            if !seen_food_positions.insert(food.position) {
+                return Err(SnapshotRestoreError::DuplicateFood);
+            }
+        }
+
+        let snake = Snake::from_parts(
+            snapshot.snake.segments,
+            snapshot.snake.direction,
+            snapshot.snake.buffered_direction,
+            snapshot.snake.next_buffered_direction,
+            snapshot.snake.grow_remaining,
+        )
+        .map_err(|_| SnapshotRestoreError::InvalidSnake)?;
+
+        if snapshot
+            .foods
+            .iter()
+            .any(|food| snake.occupies(food.position))
+        {
+            return Err(SnapshotRestoreError::FoodOverlapsSnake);
+        }
+
+        let mut rng = StdRng::seed_from_u64(snapshot.rng.seed);
+        advance_rng_draws(&mut rng, snapshot.rng.draws);
+
+        let mut restored = Self {
+            snake,
+            foods: snapshot.foods,
+            score: snapshot.score,
+            speed_level: snapshot.speed_level,
+            tick_count: snapshot.tick_count,
+            status: GameStatus::Paused,
+            death_reason: snapshot.death_reason,
+            glow: None,
+            elapsed_millis: snapshot.elapsed_millis,
+            bounds: snapshot.bounds,
+            base_speed_level: snapshot.base_speed_level,
+            food_density: normalize_food_density(snapshot.food_density),
+            rng_seed: snapshot.rng.seed,
+            rng_draws: snapshot.rng.draws,
+            rng,
+        };
+
+        if restored.snake.len() >= restored.bounds.total_cells() {
+            restored.status = GameStatus::Victory;
+            restored.death_reason = None;
+        } else {
+            restored.sync_food_count_to_density();
+        }
+
+        Ok(restored)
+    }
+
     /// Creates a fresh game state reusing the same grid bounds and starting speed.
     ///
     /// The returned state is in `Playing` status; the caller is responsible for
@@ -476,6 +652,30 @@ impl GameState {
         coverage_total_multiplier(self.coverage_percent_after_growth(1))
     }
 
+    /// Returns how many foods are needed to reach the next speed level.
+    #[must_use]
+    pub fn foods_until_next_speed_level(&self) -> u32 {
+        let mut level = self.base_speed_level;
+        let mut remaining_food = self.snake.len().saturating_sub(2) as u32;
+
+        loop {
+            let required_for_next = Self::food_required_for_next_level(level);
+            if required_for_next == 0 {
+                return 0;
+            }
+            if remaining_food < required_for_next {
+                return required_for_next - remaining_food;
+            }
+
+            remaining_food -= required_for_next;
+            let next = level.saturating_add(1);
+            if next == level {
+                return 0;
+            }
+            level = next;
+        }
+    }
+
     fn coverage_percent_after_growth(&self, growth: usize) -> f64 {
         let total_cells = self.bounds.total_cells();
         if total_cells == 0 {
@@ -505,15 +705,16 @@ impl GameState {
         }
 
         while self.foods.len() < target_count {
-            let Some(mut food) =
-                spawn_food_avoiding(&mut self.rng, self.bounds, &self.snake, &self.foods)
-            else {
+            let candidates = available_food_positions(self.bounds, &self.snake, &self.foods);
+            if candidates.is_empty() {
                 break;
-            };
+            }
+
+            let mut food = Food::new(candidates[self.random_usize_below(candidates.len())]);
 
             // 30% chance to upgrade newly spawned food to super food
             // (only after the game has started — initial food is always normal).
-            if self.tick_count > 0 && self.rng.gen_range(0..100) < 30 {
+            if self.tick_count > 0 && self.random_u32_below(100) < 30 {
                 let head = self.snake.head();
                 let distance = (head.x - food.position.x).unsigned_abs()
                     + (head.y - food.position.y).unsigned_abs();
@@ -522,6 +723,18 @@ impl GameState {
 
             self.foods.push(food);
         }
+    }
+
+    fn random_usize_below(&mut self, upper: usize) -> usize {
+        debug_assert!(upper > 0);
+        self.rng_draws = self.rng_draws.saturating_add(1);
+        (self.rng.next_u64() % upper as u64) as usize
+    }
+
+    fn random_u32_below(&mut self, upper: u32) -> u32 {
+        debug_assert!(upper > 0);
+        self.rng_draws = self.rng_draws.saturating_add(1);
+        (self.rng.next_u64() % u64::from(upper)) as u32
     }
 }
 
@@ -566,12 +779,11 @@ fn dedupe_food_positions(foods: &mut Vec<Food>) {
     *foods = unique;
 }
 
-fn spawn_food_avoiding<R: Rng + ?Sized>(
-    rng: &mut R,
+fn available_food_positions(
     bounds: GridSize,
     snake: &Snake,
     existing_foods: &[Food],
-) -> Option<Food> {
+) -> Vec<Position> {
     let mut candidates = Vec::new();
 
     for y in 0..i32::from(bounds.height) {
@@ -589,21 +801,24 @@ fn spawn_food_avoiding<R: Rng + ?Sized>(
         }
     }
 
-    if candidates.is_empty() {
-        return None;
-    }
+    candidates
+}
 
-    let index = rng.gen_range(0..candidates.len());
-    Some(Food::new(candidates[index]))
+fn advance_rng_draws(rng: &mut StdRng, draws: u64) {
+    for _ in 0..draws {
+        let _ = rng.next_u64();
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use crate::config::{GridSize, MAX_START_SPEED_LEVEL};
     use crate::food::Food;
     use crate::input::Direction;
 
-    use super::{FoodDensity, GameState, GameStatus};
+    use super::{FoodDensity, GameState, GameStatus, SnapshotRestoreError};
     use crate::input::GameInput;
     use crate::snake::{Position, Snake};
 
@@ -940,6 +1155,18 @@ mod tests {
     }
 
     #[test]
+    fn super_food_ripple_duration_has_minimum() {
+        let duration = super::GlowEffect::super_food_duration(1, 100);
+        assert!(duration >= Duration::from_millis(440));
+    }
+
+    #[test]
+    fn super_food_ripple_duration_has_maximum() {
+        let duration = super::GlowEffect::super_food_duration(2_000, 1);
+        assert!(duration <= Duration::from_millis(1_800));
+    }
+
+    #[test]
     fn ordinary_food_base_points_tracks_speed_level() {
         let mut state = GameState::new_with_seed(
             GridSize {
@@ -983,5 +1210,80 @@ mod tests {
 
         // Post-growth coverage is 18.75%, so multiplier is 1 + min(18.75 * 0.10, 2.0) = 2.875.
         assert!((state.ordinary_food_projected_multiplier() - 2.875).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn foods_until_next_speed_level_tracks_progress_within_current_level() {
+        let bounds = GridSize {
+            width: 200,
+            height: 200,
+        };
+        let mut state = GameState::new_with_seed_speed_and_food(
+            bounds,
+            55,
+            1,
+            FoodDensity {
+                foods_per: 1,
+                cells_per: usize::MAX,
+            },
+        );
+        // 8 foods eaten means snake length 10.
+        // Level progression from start:
+        // - 6 foods to reach level 2
+        // - then 2 foods toward next threshold (7)
+        // => 5 foods remaining to level 3.
+        let segments = (0..10)
+            .map(|i| Position { x: 150 - i, y: 10 })
+            .collect::<Vec<_>>();
+        state.snake = Snake::from_segments(segments, Direction::Right)
+            .expect("snake segments should be valid");
+        state.update_speed_level();
+
+        assert_eq!(state.speed_level, 2);
+        assert_eq!(state.foods_until_next_speed_level(), 5);
+    }
+
+    #[test]
+    fn snapshot_round_trip_restores_core_state() {
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 20,
+                height: 20,
+            },
+            123,
+        );
+        state.snake = Snake::new(Position { x: 4, y: 4 }, Direction::Right);
+        state.foods = vec![Food::new(Position { x: 8, y: 4 })];
+        state.tick();
+        state.record_tick_duration(Duration::from_millis(200));
+
+        let snapshot = state.to_snapshot_v1();
+        let restored = GameState::from_snapshot_v1(snapshot).expect("snapshot should restore");
+
+        assert_eq!(restored.score, state.score);
+        assert_eq!(restored.tick_count, state.tick_count);
+        assert_eq!(restored.bounds(), state.bounds());
+        assert_eq!(restored.snake.head(), state.snake.head());
+        assert_eq!(restored.status, GameStatus::Paused);
+    }
+
+    #[test]
+    fn snapshot_rejects_food_overlapping_snake() {
+        let mut state = GameState::new_with_seed(
+            GridSize {
+                width: 20,
+                height: 20,
+            },
+            99,
+        );
+        state.snake = Snake::new(Position { x: 5, y: 5 }, Direction::Right);
+        let mut snapshot = state.to_snapshot_v1();
+        snapshot.foods = vec![Food::new(state.snake.head())];
+
+        let result = GameState::from_snapshot_v1(snapshot);
+        assert!(matches!(
+            result,
+            Err(SnapshotRestoreError::FoodOverlapsSnake)
+        ));
     }
 }

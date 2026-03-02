@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::GridSize;
 use crate::input::Direction;
 
 /// Grid position in logical cell coordinates.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Position {
     pub x: i32,
     pub y: i32,
@@ -210,6 +211,47 @@ impl Snake {
     #[must_use]
     pub fn direction(&self) -> Direction {
         self.direction
+    }
+
+    /// Returns the currently buffered primary direction.
+    #[must_use]
+    pub fn buffered_direction(&self) -> Direction {
+        self.buffered_direction
+    }
+
+    /// Returns the currently buffered secondary direction.
+    #[must_use]
+    pub fn next_buffered_direction(&self) -> Option<Direction> {
+        self.next_buffered_direction
+    }
+
+    /// Returns how many growth segments remain queued.
+    #[must_use]
+    pub fn grow_remaining(&self) -> u32 {
+        self.grow_remaining
+    }
+
+    /// Creates a snake from explicit internal state.
+    ///
+    /// This is used by session restore to reconstruct buffered-input state.
+    pub fn from_parts(
+        segments: Vec<Position>,
+        direction: Direction,
+        buffered_direction: Direction,
+        next_buffered_direction: Option<Direction>,
+        grow_remaining: u32,
+    ) -> Result<Self, SnakeBuildError> {
+        if segments.is_empty() {
+            return Err(SnakeBuildError::EmptySegments);
+        }
+
+        Ok(Self {
+            body: VecDeque::from(segments),
+            direction,
+            buffered_direction,
+            next_buffered_direction,
+            grow_remaining,
+        })
     }
 
     /// Iterates over body segments from head to tail.
