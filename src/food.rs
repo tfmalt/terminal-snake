@@ -53,7 +53,7 @@ impl Food {
     pub fn growth(self) -> u32 {
         match self.kind {
             FoodKind::Normal => 1,
-            FoodKind::Super { .. } => 5,
+            FoodKind::Super { .. } => 10,
         }
     }
 
@@ -180,7 +180,7 @@ mod tests {
     fn super_food_grants_ten_points() {
         let food = Food::new_super(Position { x: 1, y: 1 }, 10);
         assert_eq!(food.points(), 10);
-        assert_eq!(food.growth(), 5);
+        assert_eq!(food.growth(), 10);
         assert!(food.is_super());
     }
 
