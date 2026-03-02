@@ -5,6 +5,10 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 fn main() {
+    // Expose the build year for the copyright notice so it stays current.
+    let year = time_year();
+    println!("cargo:rustc-env=BUILD_YEAR={year}");
+
     let manifest_dir =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR should be set"));
     let themes_dir = manifest_dir.join("assets/themes");
@@ -77,4 +81,19 @@ fn is_json_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+}
+
+/// Returns the current year as a string using `UNIX_EPOCH`-based arithmetic.
+fn time_year() -> String {
+    use std::time::SystemTime;
+
+    let secs = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // Approximate year from unix timestamp (close enough for copyright).
+    let days = secs / 86400;
+    let year = 1970 + (days as u32 * 400) / 146097;
+    year.to_string()
 }

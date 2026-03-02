@@ -1,0 +1,31 @@
+{
+  "name": "Light",
+  "defs": {
+    "white": "#FFFFFF",
+    "checker": "#E2E2E2",
+    "snake_head_red": "#B83232",
+    "snake_body_red": "#D83E3E",
+    "snake_tail_red": "#A62B2B",
+    "food_green": "#22A24B",
+    "super_food_green": "#38BDF8",
+    "text_dark": "#2B2B2B",
+    "text_muted": "#616161",
+    "text_border": "#1F1F1F",
+    "panel_bg": "#EAEAEA"
+  },
+  "theme": {
+    "snake_head": "snake_head_red",
+    "snake_body": "snake_body_red",
+    "snake_tail": "snake_tail_red",
+    "food": "food_green",
+    "super_food": "super_food_green",
+    "terminal_bg": "white",
+    "field_bg": "white",
+    "field_bg_alt": "checker",
+    "ui_bg": "panel_bg",
+    "ui_text": "text_dark",
+    "ui_accent": "text_dark",
+    "ui_muted": "text_muted",
+    "ui_bright": "text_border"
+  }
+}
