@@ -208,7 +208,7 @@ pub fn render_start_menu(
         let snake_left_col = popup_width.saturating_sub(snake_width) / 2;
         let padded_terminal = format!("{}{}", " ".repeat(snake_left_col), "TERMINAL");
         let terminal_style = Style::default()
-            .fg(theme.ui_accent)
+            .fg(theme.ui_text)
             .add_modifier(Modifier::BOLD)
             .bg(theme.ui_bg);
 
@@ -308,7 +308,7 @@ pub fn render_start_menu(
                     .alignment(Alignment::Center)
                     .style(
                         Style::default()
-                            .fg(theme.ui_text)
+                            .fg(theme.ui_accent)
                             .add_modifier(Modifier::BOLD)
                             .bg(theme.ui_bg),
                     ),
@@ -438,7 +438,7 @@ pub fn render_pause_menu(
             body.push(
                 Line::from(line).style(
                     Style::default()
-                        .fg(theme.ui_accent)
+                        .fg(theme.ui_text)
                         .add_modifier(Modifier::BOLD),
                 ),
             );
@@ -975,7 +975,7 @@ fn start_screen_title_lines(theme: &Theme) -> Vec<Line<'static>> {
                 Span::styled(
                     snake_row,
                     Style::default()
-                        .fg(theme.snake_body)
+                        .fg(theme.ui_accent)
                         .add_modifier(Modifier::BOLD),
                 ),
             ])
@@ -992,7 +992,7 @@ fn snake_only_title_lines(theme: &Theme) -> Vec<Line<'static>> {
             Line::from(Span::styled(
                 row,
                 Style::default()
-                    .fg(theme.snake_body)
+                    .fg(theme.ui_accent)
                     .add_modifier(Modifier::BOLD),
             ))
         })
