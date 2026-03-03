@@ -343,6 +343,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
                 MenuAction::Restart => {
                     state = state.restart();
                     state.status = GameStatus::Paused;
+                    menu.enter_start();
                     game_over_input_locked_until = None;
                 }
                 MenuAction::Quit => {
@@ -388,7 +389,7 @@ fn run(cli: Cli, platform: Platform) -> io::Result<()> {
             if state.status == GameStatus::GameOver {
                 game_over_reference_high_score = high_score;
                 menu.enter_game_over();
-                game_over_input_locked_until = Some(Instant::now() + Duration::from_secs(5));
+                game_over_input_locked_until = Some(Instant::now() + Duration::from_secs(1));
 
                 if state.score > high_score {
                     high_score = state.score;
