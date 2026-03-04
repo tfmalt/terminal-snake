@@ -752,7 +752,7 @@ dependencies = [
 
 [[package]]
 name = "terminal-snake"
-version = "0.9.24"
+version = "0.9.25"
 dependencies = [
  "clap",
  "crossterm",

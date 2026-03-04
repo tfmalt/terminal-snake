@@ -2,24 +2,24 @@ class TerminalSnake < Formula
   desc "Retro cross-platform terminal Snake game"
   homepage "https://github.com/tfmalt/terminal-snake"
   license "MIT"
-  RELEASE = "v0.8.16"
+  RELEASE = "v0.9.25"
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/tfmalt/terminal-snake/releases/download/#{RELEASE}/terminal-snake-#{RELEASE}-aarch64-apple-darwin.tar.gz"
-      sha256 "07272bc9a968c6c76cec11f76bd091c36b6ba5bb7ac464d7fdc981e32020cec3"
+      sha256 "39f13fb5ae9d20013d0d0ec5bd56ce11fdba7f864a5620f56b4758d89f2c2469"
     else
       url "https://github.com/tfmalt/terminal-snake/releases/download/#{RELEASE}/terminal-snake-#{RELEASE}-x86_64-apple-darwin.tar.gz"
-      sha256 "a4c892a5c6f4d1aec4f2c8028356750648381208cb3039ced7b5f347affd0f97"
+      sha256 "e9ca375872d7f721e419c051c27a640c2bca18042197d48520a4270a53892ebe"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/tfmalt/terminal-snake/releases/download/#{RELEASE}/terminal-snake-#{RELEASE}-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "4201e4e7d88d7df939ffd1e572a7b7e5d703087032c953271b62e672fc5e6868"
+      sha256 "a64d89832f24a9c04797745ca48baa9ec8eba00e88dec9ba9c666474759b9e09"
     else
       url "https://github.com/tfmalt/terminal-snake/releases/download/#{RELEASE}/terminal-snake-#{RELEASE}-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "5d7bfad62a7cde86ebedd5492af358a5f44cee58609e352ce338c03a2f2b9065"
+      sha256 "cf5b023d8779f5d2ae0fc241a31b3885f0d40278cb8c58a312a259d2325de223"
     end
   end
 
